@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input';
 import { TieList } from '@/components/TieList';
 import { AddTieDialog } from '@/components/AddTieDialog';
 import type { Tie, TieFormData, TieCategory } from '@/lib/types';
-import { tieCategories } from '@/lib/types'; // Import all predefined categories
+// tieCategories import removed as categories are now dynamic
 import { PlusCircle, Shirt, Search } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -19,9 +19,11 @@ const initialTiesData: Omit<Tie, 'id'>[] = [
   { name: 'Green Plaid Wool Tie', quantity: 3, unitPrice: 35, category: 'Plaid', imageUrl: 'https://placehold.co/300x400.png' },
 ];
 
+const defaultCategories: TieCategory[] = ['Solid', 'Striped', 'Dotted', 'Plaid', 'Floral', 'Paisley', 'Geometric', 'Novelty'];
 
 export default function HomePage() {
   const [ties, setTies] = useState<Tie[]>([]);
+  const [categories, setCategories] = useState<TieCategory[]>([]);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingTie, setEditingTie] = useState<TieFormData | undefined>(undefined);
   const [searchTerm, setSearchTerm] = useState('');
@@ -35,6 +37,16 @@ export default function HomePage() {
       const tiesWithIds = initialTiesData.map(tie => ({ ...tie, id: crypto.randomUUID() }));
       setTies(tiesWithIds);
     }
+
+    const storedCategories = localStorage.getItem('tieTrackCategories');
+    if (storedCategories) {
+      setCategories(JSON.parse(storedCategories));
+    } else {
+      const catsFromInitialTies = initialTiesData.map(tie => tie.category);
+      const uniqueInitialCategories = Array.from(new Set([...defaultCategories, ...catsFromInitialTies]));
+      setCategories(uniqueInitialCategories);
+      localStorage.setItem('tieTrackCategories', JSON.stringify(uniqueInitialCategories));
+    }
   }, []);
 
   useEffect(() => {
@@ -42,6 +54,12 @@ export default function HomePage() {
         localStorage.setItem('tieTrackTies', JSON.stringify(ties));
     }
   }, [ties]);
+
+  useEffect(() => {
+    if (categories.length > 0 || localStorage.getItem('tieTrackCategories')) {
+        localStorage.setItem('tieTrackCategories', JSON.stringify(categories));
+    }
+  }, [categories]);
 
   const processImageAndGetUrl = async (imageFile: File | null | undefined, currentImageUrl?: string): Promise<string> => {
     if (imageFile) {
@@ -56,6 +74,21 @@ export default function HomePage() {
     return currentImageUrl || `https://placehold.co/300x400.png`;
   };
 
+  const handleAddCategory = async (categoryName: string): Promise<boolean> => {
+    const trimmedName = categoryName.trim();
+    if (!trimmedName) {
+      toast({ title: "Error", description: "Category name cannot be empty.", variant: "destructive" });
+      return false;
+    }
+    if (categories.some(cat => cat.toLowerCase() === trimmedName.toLowerCase())) {
+      toast({ title: "Error", description: `Category "${trimmedName}" already exists.`, variant: "destructive" });
+      return false;
+    }
+    setCategories(prev => [...prev, trimmedName].sort());
+    toast({ title: "Category Added", description: `Category "${trimmedName}" has been added.` });
+    return true;
+  };
+
   const handleFormSubmit = async (data: TieFormData) => {
     const finalImageUrl = await processImageAndGetUrl(data.imageFile, data.imageUrl);
     
@@ -63,7 +96,7 @@ export default function HomePage() {
       name: data.name!,
       quantity: data.quantity!,
       unitPrice: data.unitPrice!,
-      category: data.category!,
+      category: data.category!, // Category is now a string
       imageUrl: finalImageUrl,
     };
 
@@ -101,7 +134,7 @@ export default function HomePage() {
     tie.name.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  const TABS_ORDER: (TieCategory | "All")[] = ["All", ...tieCategories];
+  const TABS_ORDER: string[] = ["All", ...categories.filter(c => c.toLowerCase() !== 'all').sort()];
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -140,7 +173,7 @@ export default function HomePage() {
           </TabsList>
 
           {TABS_ORDER.map((category) => {
-            const tiesForTab = category === "All"
+            const tiesForTab = category.toLowerCase() === "all"
               ? filteredTies
               : filteredTies.filter(tie => tie.category === category);
             return (
@@ -161,6 +194,8 @@ export default function HomePage() {
         onOpenChange={setIsDialogOpen}
         onSubmit={handleFormSubmit}
         initialData={editingTie}
+        categories={categories.filter(c => c.toLowerCase() !== 'all')}
+        onAddCategory={handleAddCategory}
       />
       
       <footer className="py-6 text-center text-sm text-muted-foreground border-t border-border mt-12">

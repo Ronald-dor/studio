@@ -11,20 +11,28 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import type { TieFormData, TieCategory } from '@/lib/types';
-import { TieSchema, tieCategories } from '@/lib/types';
+import { TieSchema } from '@/lib/types'; // tieCategories removed from import
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ScrollArea } from './ui/scroll-area';
-import { ImageUp } from 'lucide-react';
+import { ImageUp, Plus } from 'lucide-react';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
+import { useToast } from '@/hooks/use-toast';
+
 
 interface TieFormProps {
   onSubmit: (data: TieFormData) => void;
   initialData?: TieFormData;
   onCancel?: () => void;
+  categories: TieCategory[];
+  onAddCategory: (categoryName: string) => Promise<boolean>;
 }
 
-export function TieForm({ onSubmit, initialData, onCancel }: TieFormProps) {
+export function TieForm({ onSubmit, initialData, onCancel, categories, onAddCategory }: TieFormProps) {
   const [previewUrl, setPreviewUrl] = useState<string | null>(initialData?.imageUrl || null);
   const [imageFile, setImageFile] = useState<File | null>(null);
+  const [isAddingCategory, setIsAddingCategory] = useState(false);
+  const [newCategoryInput, setNewCategoryInput] = useState("");
+  const { toast } = useToast();
 
   const form = useForm<TieFormData>({
     resolver: zodResolver(TieSchema),
@@ -32,26 +40,32 @@ export function TieForm({ onSubmit, initialData, onCancel }: TieFormProps) {
       name: '',
       quantity: 0,
       unitPrice: 0,
-      category: tieCategories[0],
+      category: categories.length > 0 ? categories[0] : '', // Default to first dynamic category or empty
       imageUrl: `https://placehold.co/300x400.png`,
       imageFile: null,
     },
   });
 
   useEffect(() => {
-    if (initialData?.imageUrl) {
-      setPreviewUrl(initialData.imageUrl);
+    const defaultCat = categories.length > 0 ? categories[0] : '';
+    if (initialData) {
+        form.reset({
+            ...initialData,
+            category: categories.includes(initialData.category) ? initialData.category : defaultCat,
+        });
+        setPreviewUrl(initialData.imageUrl || null);
+    } else {
+        form.reset({
+            name: '',
+            quantity: 0,
+            unitPrice: 0,
+            category: defaultCat,
+            imageUrl: `https://placehold.co/300x400.png`,
+            imageFile: null,
+        });
+        setPreviewUrl(null);
     }
-    // Reset form if initialData changes
-    form.reset(initialData || {
-      name: '',
-      quantity: 0,
-      unitPrice: 0,
-      category: tieCategories[0],
-      imageUrl: `https://placehold.co/300x400.png`,
-      imageFile: null,
-    });
-  }, [initialData, form]);
+  }, [initialData, form, categories]);
 
 
   const handleImageChange = (event: ChangeEvent<HTMLInputElement>) => {
@@ -72,8 +86,8 @@ export function TieForm({ onSubmit, initialData, onCancel }: TieFormProps) {
   const handleSubmit = (values: TieFormData) => {
     const dataToSubmit: TieFormData = {
       ...values,
-      imageFile: imageFile, // Pass the file itself
-      imageUrl: previewUrl || `https://placehold.co/300x400.png` // Pass the preview URL (data URL or original)
+      imageFile: imageFile, 
+      imageUrl: previewUrl || `https://placehold.co/300x400.png`
     };
     onSubmit(dataToSubmit);
     form.reset();
@@ -81,6 +95,20 @@ export function TieForm({ onSubmit, initialData, onCancel }: TieFormProps) {
     setImageFile(null);
   };
   
+  const handleAddNewCategory = async () => {
+    const trimmedName = newCategoryInput.trim();
+    if (!trimmedName) {
+        toast({ title: "Error", description: "Category name cannot be empty.", variant: "destructive" });
+        return;
+    }
+    const success = await onAddCategory(trimmedName);
+    if (success) {
+        form.setValue('category', trimmedName);
+        setNewCategoryInput('');
+        setIsAddingCategory(false);
+    }
+  };
+
   return (
     <Form {...form}>
       <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-6">
@@ -89,7 +117,7 @@ export function TieForm({ onSubmit, initialData, onCancel }: TieFormProps) {
             <CardTitle>{initialData?.id ? 'Edit Tie' : 'Add New Tie'}</CardTitle>
           </CardHeader>
           <CardContent>
-            <ScrollArea className="h-[60vh] pr-4">
+            <ScrollArea className="h-[calc(90vh-220px)] md:h-[60vh] pr-4"> {/* Adjusted height */}
             <div className="space-y-4">
               <FormField
                 control={form.control}
@@ -140,20 +168,25 @@ export function TieForm({ onSubmit, initialData, onCancel }: TieFormProps) {
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>Category</FormLabel>
-                    <Select onValueChange={field.onChange} defaultValue={field.value}>
-                      <FormControl>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select a category" />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        {tieCategories.map((category) => (
-                          <SelectItem key={category} value={category}>
-                            {category}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    <div className="flex items-center gap-2">
+                        <Select onValueChange={field.onChange} value={field.value || (categories.length > 0 ? categories[0] : '')} >
+                          <FormControl>
+                            <SelectTrigger>
+                              <SelectValue placeholder="Select a category" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            {categories.map((category) => (
+                              <SelectItem key={category} value={category}>
+                                {category}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <Button type="button" variant="outline" size="icon" onClick={() => setIsAddingCategory(true)} aria-label="Add new category">
+                            <Plus size={16}/>
+                        </Button>
+                    </div>
                     <FormMessage />
                   </FormItem>
                 )}
@@ -187,6 +220,27 @@ export function TieForm({ onSubmit, initialData, onCancel }: TieFormProps) {
           <Button type="submit" variant="default">{initialData?.id ? 'Save Changes' : 'Add Tie'}</Button>
         </div>
       </form>
+      <AlertDialog open={isAddingCategory} onOpenChange={setIsAddingCategory}>
+        <AlertDialogContent>
+            <AlertDialogHeader>
+            <AlertDialogTitle>Add New Category</AlertDialogTitle>
+            <AlertDialogDescription>
+                Enter the name for the new category.
+            </AlertDialogDescription>
+            </AlertDialogHeader>
+            <Input
+            value={newCategoryInput}
+            onChange={(e) => setNewCategoryInput(e.target.value)}
+            placeholder="Category name"
+            className="my-2"
+            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleAddNewCategory();}}}
+            />
+            <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setNewCategoryInput('')}>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleAddNewCategory}>Add Category</AlertDialogAction>
+            </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Form>
   );
 }

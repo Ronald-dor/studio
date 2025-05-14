@@ -4,7 +4,7 @@ import React from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { TieForm } from './TieForm';
-import type { TieFormData, Tie } from '@/lib/types';
+import type { TieFormData, Tie, TieCategory } from '@/lib/types';
 import { PlusCircle } from 'lucide-react';
 
 interface AddTieDialogProps {
@@ -13,9 +13,11 @@ interface AddTieDialogProps {
   onSubmit: (data: TieFormData) => void;
   initialData?: TieFormData;
   trigger?: React.ReactNode; // Optional custom trigger
+  categories: TieCategory[];
+  onAddCategory: (categoryName: string) => Promise<boolean>;
 }
 
-export function AddTieDialog({ open, onOpenChange, onSubmit, initialData, trigger }: AddTieDialogProps) {
+export function AddTieDialog({ open, onOpenChange, onSubmit, initialData, trigger, categories, onAddCategory }: AddTieDialogProps) {
   const internalSubmit = (data: TieFormData) => {
     onSubmit(data);
     onOpenChange(false); // Close dialog on submit
@@ -32,7 +34,13 @@ export function AddTieDialog({ open, onOpenChange, onSubmit, initialData, trigge
         <DialogHeader>
           {/* Title is handled within TieForm */}
         </DialogHeader>
-        <TieForm onSubmit={internalSubmit} initialData={initialData} onCancel={handleCancel} />
+        <TieForm 
+          onSubmit={internalSubmit} 
+          initialData={initialData} 
+          onCancel={handleCancel}
+          categories={categories}
+          onAddCategory={onAddCategory}
+        />
       </DialogContent>
     </Dialog>
   );
