@@ -2,7 +2,7 @@
 "use client";
 
 import type { ChangeEvent } from 'react';
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import Image from 'next/image';
@@ -24,8 +24,7 @@ interface TieFormProps {
   onSubmit: (data: TieFormData) => void;
   initialData?: TieFormData;
   onCancel?: () => void;
-  formCategories: TieCategory[];
-  allCategoriesForManagement: TieCategory[];
+  availableCategories: TieCategory[]; // Changed from formCategories and allCategoriesForManagement
   onAddCategory: (categoryName: string) => Promise<boolean>;
   onDeleteCategory: (categoryName: TieCategory) => void;
 }
@@ -34,8 +33,7 @@ export function TieForm({
   onSubmit, 
   initialData, 
   onCancel, 
-  formCategories, 
-  allCategoriesForManagement,
+  availableCategories, 
   onAddCategory, 
   onDeleteCategory 
 }: TieFormProps) {
@@ -56,6 +54,9 @@ export function TieForm({
   const [webcamStream, setWebcamStream] = useState<MediaStream | null>(null);
   const [capturedImageDataUrl, setCapturedImageDataUrl] = useState<string | null>(null);
 
+  const selectDropdownCategories = useMemo(() => {
+    return availableCategories.filter(cat => cat.toLowerCase() !== 'todas');
+  }, [availableCategories]);
 
   const form = useForm<TieFormData>({ 
     resolver: zodResolver(TieSchema),
@@ -64,19 +65,21 @@ export function TieForm({
       quantity: initialData?.quantity || 0,
       unitPrice: initialData?.unitPrice || 0,
       valueInQuantity: initialData?.valueInQuantity || 0,
-      category: initialData?.category || (formCategories.length > 0 ? formCategories[0] : UNCATEGORIZED_LABEL), 
+      category: initialData?.category || (selectDropdownCategories.length > 0 ? selectDropdownCategories[0] : UNCATEGORIZED_LABEL), 
       imageUrl: initialData?.imageUrl || `https://placehold.co/300x400.png`,
       imageFile: null,
     },
   });
 
   useEffect(() => {
-    const defaultCat = formCategories.length > 0 ? formCategories[0] : UNCATEGORIZED_LABEL;
+    const defaultCat = selectDropdownCategories.length > 0 ? selectDropdownCategories[0] : UNCATEGORIZED_LABEL;
     if (initialData) {
         form.reset({
             ...initialData,
             valueInQuantity: initialData.valueInQuantity || 0,
-            category: formCategories.includes(initialData.category) ? initialData.category : (initialData.category || defaultCat),
+            category: selectDropdownCategories.includes(initialData.category) 
+                        ? initialData.category 
+                        : (initialData.category === UNCATEGORIZED_LABEL ? UNCATEGORIZED_LABEL : defaultCat),
             imageFile: null, 
         });
         setPreviewUrl(initialData.imageUrl || null);
@@ -92,7 +95,7 @@ export function TieForm({
         });
         setPreviewUrl(null);
     }
-  }, [initialData, form, formCategories]);
+  }, [initialData, form, selectDropdownCategories]);
 
 
   const handleImageChange = (event: ChangeEvent<HTMLInputElement>) => {
@@ -107,7 +110,6 @@ export function TieForm({
       setCapturedImageDataUrl(null); // Clear any webcam capture
     } else {
       setImageFile(null);
-      // Do not reset previewUrl if it came from webcam or initial data
       if (!capturedImageDataUrl) {
         setPreviewUrl(initialData?.imageUrl || `https://placehold.co/300x400.png`);
       }
@@ -123,12 +125,13 @@ export function TieForm({
       imageUrl: previewUrl || `https://placehold.co/300x400.png`
     };
     onSubmit(dataToSubmit);
+    const defaultCat = selectDropdownCategories.length > 0 ? selectDropdownCategories[0] : UNCATEGORIZED_LABEL;
     form.reset({
         name: '',
         quantity: 0,
         unitPrice: 0,
         valueInQuantity: 0,
-        category: formCategories.length > 0 ? formCategories[0] : UNCATEGORIZED_LABEL,
+        category: defaultCat,
         imageUrl: `https://placehold.co/300x400.png`,
         imageFile: null,
     });
@@ -162,9 +165,14 @@ export function TieForm({
   const executeDeleteCategory = () => {
     if (categoryToDelete) {
       onDeleteCategory(categoryToDelete);
+      // After deleting, availableCategories will update, which updates selectDropdownCategories
+      // The form's category value might need resetting if the current one was deleted.
+      // The `useEffect` for form.reset depending on selectDropdownCategories should handle this adjustment.
       if (form.getValues('category') === categoryToDelete) {
-        const newFormCategories = formCategories.filter(cat => cat !== categoryToDelete);
-        form.setValue('category', newFormCategories.length > 0 ? newFormCategories[0] : UNCATEGORIZED_LABEL);
+        const newDefaultCat = availableCategories.filter(cat => cat.toLowerCase() !== 'todas' && cat !== categoryToDelete).length > 0 
+                                ? availableCategories.filter(cat => cat.toLowerCase() !== 'todas' && cat !== categoryToDelete)[0] 
+                                : UNCATEGORIZED_LABEL;
+        form.setValue('category', newDefaultCat);
       }
       setCategoryToDelete(null);
     }
@@ -208,13 +216,13 @@ export function TieForm({
       stopWebcam();
     }
     return () => {
-      stopWebcam(); // Ensure webcam is stopped on component unmount or dialog close
+      stopWebcam(); 
     };
   }, [isWebcamDialogOpen, capturedImageDataUrl]);
 
   const handleOpenWebcamDialog = () => {
     setCapturedImageDataUrl(null);
-    setHasCameraPermission(null); // Reset permission status to re-check
+    setHasCameraPermission(null); 
     setIsWebcamDialogOpen(true);
   };
 
@@ -222,15 +230,13 @@ export function TieForm({
     if (videoRef.current && canvasRef.current && webcamStream) {
       const video = videoRef.current;
       const canvas = canvasRef.current;
-      // Ensure canvas dimensions match video's rendered dimensions for accurate capture
       canvas.width = video.videoWidth;
       canvas.height = video.videoHeight;
       const context = canvas.getContext('2d');
       if (context) {
         context.drawImage(video, 0, 0, canvas.width, canvas.height);
-        const dataUrl = canvas.toDataURL('image/webp'); // Using webp for potentially smaller file sizes
+        const dataUrl = canvas.toDataURL('image/webp'); 
         setCapturedImageDataUrl(dataUrl);
-        // Webcam will be stopped by useEffect reacting to capturedImageDataUrl change
       }
     } else {
       toast({ variant: "destructive", title: "Erro ao capturar", description: "Não foi possível acessar a stream de vídeo."});
@@ -238,19 +244,22 @@ export function TieForm({
   };
 
   const handleRetakePhoto = () => {
-    setCapturedImageDataUrl(null); // This will trigger useEffect to restart webcam
+    setCapturedImageDataUrl(null); 
   };
 
   const handleUseCapturedImage = () => {
     if (capturedImageDataUrl) {
       setPreviewUrl(capturedImageDataUrl);
-      setImageFile(null); // Clear any selected file
+      setImageFile(null); 
       form.setValue('imageUrl', capturedImageDataUrl);
       form.setValue('imageFile', null);
       setIsWebcamDialogOpen(false);
-      // capturedImageDataUrl will be reset by handleOpenWebcamDialog or useEffect cleanup
     }
   };
+  
+  const categoriesForManagementDialog = useMemo(() => {
+    return availableCategories.filter(cat => cat.toLowerCase() !== 'todas').sort();
+  }, [availableCategories]);
 
   return (
     <>
@@ -348,24 +357,21 @@ export function TieForm({
                   <FormItem>
                     <FormLabel>Categoria</FormLabel>
                     <div className="flex items-center gap-2">
-                        <Select onValueChange={field.onChange} value={field.value || (formCategories.includes(UNCATEGORIZED_LABEL) ? UNCATEGORIZED_LABEL : (formCategories.length > 0 ? formCategories[0] : ''))} >
+                        <Select onValueChange={field.onChange} value={field.value} >
                           <FormControl>
                             <SelectTrigger>
                               <SelectValue placeholder="Selecione uma categoria" />
                             </SelectTrigger>
                           </FormControl>
                           <SelectContent>
-                            {formCategories.map((category) => (
+                            {selectDropdownCategories.map((category) => (
                               <SelectItem key={category} value={category}>
                                 {category}
                               </SelectItem>
                             ))}
-                             {formCategories.length === 0 && !formCategories.includes(UNCATEGORIZED_LABEL) && (
+                             {selectDropdownCategories.length === 0 && (
                                 <SelectItem value={UNCATEGORIZED_LABEL}>{UNCATEGORIZED_LABEL}</SelectItem>
                               )}
-                             {formCategories.length === 0 && formCategories.includes(UNCATEGORIZED_LABEL) && (
-                                 <SelectItem value={UNCATEGORIZED_LABEL} disabled>Nenhuma outra categoria disponível</SelectItem>
-                             )}
                           </SelectContent>
                         </Select>
                         <Button type="button" variant="outline" size="icon" onClick={() => setIsManageCategoryDialogOpen(true)} aria-label="Gerenciar categorias">
@@ -446,7 +452,7 @@ export function TieForm({
 
           {capturedImageDataUrl && (
             <div className="bg-muted rounded-md overflow-hidden border">
-              <Image src={capturedImageDataUrl} alt="Foto Capturada" width={600} height={400} className="w-full aspect-video object-cover" data-ai-hint="gravata moda" />
+              <Image src={capturedImageDataUrl} alt="Foto Capturada" width={600} height={400} className="w-full aspect-video object-cover" data-ai-hint="gravata moda"/>
             </div>
           )}
         </div>
@@ -492,13 +498,10 @@ export function TieForm({
                 </div>
                 
                 <Label className="text-sm font-medium">Categorias Existentes:</Label>
-                {allCategoriesForManagement.filter(cat => cat.toLowerCase() !== 'todas').length > 0 ? (
+                {categoriesForManagementDialog.length > 0 ? (
                   <ScrollArea className="h-40 rounded-md border p-2">
                     <ul className="space-y-1">
-                        {allCategoriesForManagement
-                          .filter(cat => cat.toLowerCase() !== 'todas') 
-                          .sort() 
-                          .map((category) => (
+                        {categoriesForManagementDialog.map((category) => (
                             <li key={category} className="flex items-center justify-between text-sm p-1 rounded hover:bg-muted/50">
                                 <span>{category}</span>
                                 {category !== UNCATEGORIZED_LABEL && ( 

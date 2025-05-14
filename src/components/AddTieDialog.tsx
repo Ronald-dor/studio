@@ -12,9 +12,9 @@ interface AddTieDialogProps {
   onSubmit: (data: TieFormData) => void;
   initialData?: TieFormData;
   trigger?: React.ReactNode;
-  allCategories: TieCategory[]; // Renomeado de categories para allCategories para clareza
+  allCategories: TieCategory[];
   onAddCategory: (categoryName: string) => Promise<boolean>;
-  onDeleteCategory: (categoryName: TieCategory) => void; // Nova prop
+  onDeleteCategory: (categoryName: TieCategory) => void;
 }
 
 export function AddTieDialog({ 
@@ -25,7 +25,7 @@ export function AddTieDialog({
   trigger, 
   allCategories, 
   onAddCategory,
-  onDeleteCategory // Nova prop
+  onDeleteCategory
 }: AddTieDialogProps) {
   const internalSubmit = (data: TieFormData) => {
     onSubmit(data);
@@ -47,13 +47,12 @@ export function AddTieDialog({
           onSubmit={internalSubmit} 
           initialData={initialData} 
           onCancel={handleCancel}
-          // Passa apenas as categorias filtradas para o Select do formulário
-          formCategories={allCategories.filter(c => c.toLowerCase() !== 'todas')} 
-          allCategoriesForManagement={allCategories} // Passa todas para gerenciamento
+          availableCategories={allCategories} // Pass all categories
           onAddCategory={onAddCategory}
-          onDeleteCategory={onDeleteCategory} // Passa a função de deletar
+          onDeleteCategory={onDeleteCategory}
         />
       </DialogContent>
     </Dialog>
   );
 }
+
