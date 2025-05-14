@@ -16,7 +16,6 @@ interface TieCardProps {
 }
 
 export function TieCard({ tie, onEdit, onDelete }: TieCardProps) {
-  const valueInQuantity = tie.quantity * tie.unitPrice;
 
   return (
     <Card className="flex flex-col h-full shadow-lg hover:shadow-xl transition-shadow duration-300">
@@ -48,13 +47,13 @@ export function TieCard({ tie, onEdit, onDelete }: TieCardProps) {
           <span className="flex items-center text-muted-foreground">
             <DollarSign size={14} className="mr-1" /> Valor Unitário:
           </span>
-          <span>{tie.unitPrice.toFixed(2)}</span>
+          <span>{(tie.unitPrice || 0).toFixed(2)}</span>
         </div>
         <div className="flex items-center justify-between font-semibold">
           <span className="flex items-center text-muted-foreground">
             <Coins size={14} className="mr-1" /> Valor em Quantidade:
           </span>
-          <span>{valueInQuantity.toFixed(2)}</span>
+          <span>{(tie.valueInQuantity || 0).toFixed(2)}</span>
         </div>
       </CardContent>
       <CardFooter className="flex justify-end space-x-2 pt-4">

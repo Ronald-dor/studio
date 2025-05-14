@@ -3,7 +3,7 @@
 
 import type { ChangeEvent } from 'react';
 import React, { useState, useEffect } from 'react';
-import { useForm, useWatch } from 'react-hook-form';
+import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import Image from 'next/image';
 import { Button } from '@/components/ui/button';
@@ -47,31 +47,27 @@ export function TieForm({
   const [categoryToDelete, setCategoryToDelete] = useState<TieCategory | null>(null);
   const [isConfirmDeleteCategoryOpen, setIsConfirmDeleteCategoryOpen] = useState(false);
 
-  const form = useForm<TieFormData & { valueInQuantity?: number }>({ // Adicionado valueInQuantity ao tipo do formulário
+  const form = useForm<TieFormData>({ 
     resolver: zodResolver(TieSchema),
     defaultValues: {
       name: initialData?.name || '',
       quantity: initialData?.quantity || 0,
       unitPrice: initialData?.unitPrice || 0,
+      valueInQuantity: initialData?.valueInQuantity || 0,
       category: initialData?.category || (formCategories.length > 0 ? formCategories[0] : UNCATEGORIZED_LABEL), 
       imageUrl: initialData?.imageUrl || `https://placehold.co/300x400.png`,
       imageFile: null,
-      valueInQuantity: initialData ? (initialData.quantity || 0) * (initialData.unitPrice || 0) : 0,
     },
   });
-
-  const watchedQuantity = useWatch({ control: form.control, name: 'quantity' });
-  const watchedUnitPrice = useWatch({ control: form.control, name: 'unitPrice' });
-  const watchedValueInQuantity = useWatch({ control: form.control, name: 'valueInQuantity' });
 
   useEffect(() => {
     const defaultCat = formCategories.length > 0 ? formCategories[0] : UNCATEGORIZED_LABEL;
     if (initialData) {
         form.reset({
             ...initialData,
+            valueInQuantity: initialData.valueInQuantity || 0,
             category: formCategories.includes(initialData.category) ? initialData.category : (initialData.category || defaultCat),
-            imageFile: null, // Reset imageFile
-            valueInQuantity: (initialData.quantity || 0) * (initialData.unitPrice || 0),
+            imageFile: null, 
         });
         setPreviewUrl(initialData.imageUrl || null);
     } else {
@@ -79,10 +75,10 @@ export function TieForm({
             name: '',
             quantity: 0,
             unitPrice: 0,
+            valueInQuantity: 0,
             category: defaultCat,
             imageUrl: `https://placehold.co/300x400.png`,
             imageFile: null,
-            valueInQuantity: 0,
         });
         setPreviewUrl(null);
     }
@@ -107,6 +103,7 @@ export function TieForm({
   const handleSubmit = (values: TieFormData) => {
     const dataToSubmit: TieFormData = {
       ...values,
+      valueInQuantity: values.valueInQuantity || 0,
       category: values.category || UNCATEGORIZED_LABEL,
       imageFile: imageFile, 
       imageUrl: previewUrl || `https://placehold.co/300x400.png`
@@ -116,10 +113,10 @@ export function TieForm({
         name: '',
         quantity: 0,
         unitPrice: 0,
+        valueInQuantity: 0,
         category: formCategories.length > 0 ? formCategories[0] : UNCATEGORIZED_LABEL,
         imageUrl: `https://placehold.co/300x400.png`,
         imageFile: null,
-        valueInQuantity: 0,
     });
     setPreviewUrl(null);
     setImageFile(null);
@@ -192,12 +189,7 @@ export function TieForm({
                           type="number" 
                           placeholder="Ex: 10" 
                           {...field} 
-                          onChange={e => {
-                            const newQuantity = parseInt(e.target.value,10) || 0;
-                            field.onChange(newQuantity);
-                            const currentUnitPrice = form.getValues('unitPrice') || 0;
-                            form.setValue('valueInQuantity', newQuantity * currentUnitPrice, { shouldValidate: true });
-                          }} 
+                          onChange={e => field.onChange(parseInt(e.target.value,10) || 0)}
                           value={field.value || 0} 
                         />
                       </FormControl>
@@ -217,12 +209,7 @@ export function TieForm({
                           step="0.01" 
                           placeholder="Ex: 25.00" 
                           {...field} 
-                          onChange={e => {
-                            const newUnitPrice = parseFloat(e.target.value) || 0;
-                            field.onChange(newUnitPrice);
-                            const currentQuantity = form.getValues('quantity') || 0;
-                            form.setValue('valueInQuantity', currentQuantity * newUnitPrice, { shouldValidate: true });
-                          }} 
+                          onChange={e => field.onChange(parseFloat(e.target.value) || 0)}
                           value={field.value || 0} 
                         />
                       </FormControl>
@@ -247,21 +234,7 @@ export function TieForm({
                         step="0.01"
                         placeholder="Ex: 250.00"
                         {...field}
-                        onChange={(e) => {
-                          const newValueInQuantity = parseFloat(e.target.value) || 0;
-                          field.onChange(newValueInQuantity);
-                          let currentQuantity = form.getValues('quantity') || 0;
-                          if (currentQuantity > 0) {
-                            form.setValue('unitPrice', newValueInQuantity / currentQuantity, { shouldValidate: true });
-                          } else {
-                            if (newValueInQuantity > 0) {
-                              form.setValue('quantity', 1, { shouldValidate: true });
-                              form.setValue('unitPrice', newValueInQuantity, { shouldValidate: true });
-                            } else {
-                              form.setValue('unitPrice', 0, { shouldValidate: true });
-                            }
-                          }
-                        }}
+                        onChange={(e) => field.onChange(parseFloat(e.target.value) || 0)}
                         value={field.value || 0}
                       />
                     </FormControl>

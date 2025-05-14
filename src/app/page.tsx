@@ -12,9 +12,9 @@ import { useToast } from '@/hooks/use-toast';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 const initialTiesData: Omit<Tie, 'id'>[] = [
-  { name: 'Seda Azul Clássica', quantity: 10, unitPrice: 25, category: 'Lisa', imageUrl: 'https://placehold.co/300x400.png' },
-  { name: 'Gravata Listrada Vermelha', quantity: 5, unitPrice: 30, category: 'Listrada', imageUrl: 'https://placehold.co/300x400.png' },
-  { name: 'Gravata Borgonha Pontilhada', quantity: 8, unitPrice: 22, category: 'Pontilhada', imageUrl: 'https://placehold.co/300x400.png' },
+  { name: 'Seda Azul Clássica', quantity: 10, unitPrice: 25, valueInQuantity: 250, category: 'Lisa', imageUrl: 'https://placehold.co/300x400.png' },
+  { name: 'Gravata Listrada Vermelha', quantity: 5, unitPrice: 30, valueInQuantity: 150, category: 'Listrada', imageUrl: 'https://placehold.co/300x400.png' },
+  { name: 'Gravata Borgonha Pontilhada', quantity: 8, unitPrice: 22, valueInQuantity: 176, category: 'Pontilhada', imageUrl: 'https://placehold.co/300x400.png' },
 ];
 
 const defaultCategories: TieCategory[] = ['Lisa', 'Listrada', 'Pontilhada'];
@@ -35,7 +35,7 @@ export default function HomePage() {
     if (storedTies) {
       setTies(JSON.parse(storedTies));
     } else {
-      const tiesWithIds = initialTiesData.map(tie => ({ ...tie, id: crypto.randomUUID() }));
+      const tiesWithIds = initialTiesData.map(tie => ({ ...tie, id: crypto.randomUUID(), valueInQuantity: tie.valueInQuantity || (tie.quantity * tie.unitPrice) }));
       setTies(tiesWithIds);
     }
 
@@ -161,6 +161,7 @@ export default function HomePage() {
       name: data.name!,
       quantity: data.quantity!,
       unitPrice: data.unitPrice!,
+      valueInQuantity: data.valueInQuantity || 0,
       category: tieCategory,
       imageUrl: finalImageUrl,
     };
