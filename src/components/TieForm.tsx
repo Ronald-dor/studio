@@ -12,7 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import type { TieFormData, TieCategory } from '@/lib/types';
 import { TieSchema } from '@/lib/types'; // tieCategories removed from import
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card'; // CardHeader, CardTitle removed
 import { ScrollArea } from './ui/scroll-area';
 import { ImageUp, Plus } from 'lucide-react';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
@@ -112,12 +112,10 @@ export function TieForm({ onSubmit, initialData, onCancel, categories, onAddCate
   return (
     <Form {...form}>
       <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-6">
-        <Card>
-          <CardHeader>
-            <CardTitle>{initialData?.id ? 'Edit Tie' : 'Add New Tie'}</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <ScrollArea className="h-[calc(90vh-220px)] md:h-[60vh] pr-4"> {/* Adjusted height */}
+        <Card className="shadow-none border-none"> 
+          {/* CardHeader and CardTitle removed from here */}
+          <CardContent className="p-0">
+            <ScrollArea className="h-[calc(90vh-220px)] md:h-[calc(70vh-100px)] pr-4"> {/* Adjusted height accounting for title in dialog */}
             <div className="space-y-4">
               <FormField
                 control={form.control}
