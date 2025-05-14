@@ -1,26 +1,35 @@
+
 "use client";
 
 import React from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { Button } from '@/components/ui/button';
 import { TieForm } from './TieForm';
-import type { TieFormData, Tie, TieCategory } from '@/lib/types';
-import { PlusCircle } from 'lucide-react';
+import type { TieFormData, TieCategory } from '@/lib/types';
 
 interface AddTieDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSubmit: (data: TieFormData) => void;
   initialData?: TieFormData;
-  trigger?: React.ReactNode; // Optional custom trigger
-  categories: TieCategory[];
+  trigger?: React.ReactNode;
+  allCategories: TieCategory[]; // Renomeado de categories para allCategories para clareza
   onAddCategory: (categoryName: string) => Promise<boolean>;
+  onDeleteCategory: (categoryName: TieCategory) => void; // Nova prop
 }
 
-export function AddTieDialog({ open, onOpenChange, onSubmit, initialData, trigger, categories, onAddCategory }: AddTieDialogProps) {
+export function AddTieDialog({ 
+  open, 
+  onOpenChange, 
+  onSubmit, 
+  initialData, 
+  trigger, 
+  allCategories, 
+  onAddCategory,
+  onDeleteCategory // Nova prop
+}: AddTieDialogProps) {
   const internalSubmit = (data: TieFormData) => {
     onSubmit(data);
-    onOpenChange(false); // Close dialog on submit
+    onOpenChange(false); 
   };
 
   const handleCancel = () => {
@@ -38,8 +47,11 @@ export function AddTieDialog({ open, onOpenChange, onSubmit, initialData, trigge
           onSubmit={internalSubmit} 
           initialData={initialData} 
           onCancel={handleCancel}
-          categories={categories}
+          // Passa apenas as categorias filtradas para o Select do formulário
+          formCategories={allCategories.filter(c => c.toLowerCase() !== 'todas')} 
+          allCategoriesForManagement={allCategories} // Passa todas para gerenciamento
           onAddCategory={onAddCategory}
+          onDeleteCategory={onDeleteCategory} // Passa a função de deletar
         />
       </DialogContent>
     </Dialog>

@@ -7,10 +7,10 @@ import { Input } from '@/components/ui/input';
 import { TieList } from '@/components/TieList';
 import { AddTieDialog } from '@/components/AddTieDialog';
 import type { Tie, TieFormData, TieCategory } from '@/lib/types';
-import { PlusCircle, Shirt, Search, XIcon } from 'lucide-react';
+import { PlusCircle, Shirt, Search } from 'lucide-react'; // Removido XIcon
 import { useToast } from '@/hooks/use-toast';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
+// Removido AlertDialog de page.tsx pois a confirmação será feita em TieForm
 
 const initialTiesData: Omit<Tie, 'id'>[] = [
   { name: 'Seda Azul Clássica', quantity: 10, unitPrice: 25, category: 'Lisa', imageUrl: 'https://placehold.co/300x400.png' },
@@ -19,7 +19,7 @@ const initialTiesData: Omit<Tie, 'id'>[] = [
   { name: 'Gravata Xadrez Verde Lã', quantity: 3, unitPrice: 35, category: 'Xadrez', imageUrl: 'https://placehold.co/300x400.png' },
 ];
 
-const defaultCategories: TieCategory[] = ['Lisa', 'Listrada', 'Pontilhada', 'Xadrez', 'Floral', 'Paisley', 'Geométrica', 'Novidade', 'Sem Categoria'];
+const defaultCategories: TieCategory[] = ['Lisa', 'Listrada', 'Pontilhada', 'Xadrez', 'Floral', 'Paisley', 'Geométrica', 'Novidade'];
 const UNCATEGORIZED_LABEL = 'Sem Categoria';
 
 export default function HomePage() {
@@ -29,9 +29,8 @@ export default function HomePage() {
   const [editingTie, setEditingTie] = useState<TieFormData | undefined>(undefined);
   const [searchTerm, setSearchTerm] = useState('');
   const { toast } = useToast();
-  const [categoryToDelete, setCategoryToDelete] = useState<TieCategory | null>(null);
-  const [isDeleteCategoryAlertOpen, setIsDeleteCategoryAlertOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<string>("Todas");
+  // Estados categoryToDelete e isDeleteCategoryAlertOpen foram removidos daqui
 
 
   useEffect(() => {
@@ -46,13 +45,19 @@ export default function HomePage() {
     const storedCategories = localStorage.getItem('tieTrackCategories');
     if (storedCategories) {
       const parsedCategories = JSON.parse(storedCategories);
-      const uniqueCategories = Array.from(new Set([...defaultCategories, ...parsedCategories]));
-      setCategories(uniqueCategories.sort());
+      // Garantir que "Sem Categoria" esteja presente se houver laços não categorizados ou se for a única opção
+      const hasUncategorizedTies = (JSON.parse(storedTies || '[]') as Tie[]).some(tie => tie.category === UNCATEGORIZED_LABEL);
+      const allCategories = new Set([...defaultCategories, ...parsedCategories]);
+      if (hasUncategorizedTies || parsedCategories.length === 0) {
+        allCategories.add(UNCATEGORIZED_LABEL);
+      }
+      setCategories(Array.from(allCategories).sort());
     } else {
       const catsFromInitialTies = initialTiesData.map(tie => tie.category);
-      const uniqueInitialCategories = Array.from(new Set([...defaultCategories, ...catsFromInitialTies]));
-      setCategories(uniqueInitialCategories.sort());
-      localStorage.setItem('tieTrackCategories', JSON.stringify(uniqueInitialCategories));
+      const initialSetupCategories = new Set([...defaultCategories, ...catsFromInitialTies, UNCATEGORIZED_LABEL]);
+      const sortedInitialCategories = Array.from(initialSetupCategories).sort();
+      setCategories(sortedInitialCategories);
+      localStorage.setItem('tieTrackCategories', JSON.stringify(sortedInitialCategories));
     }
   }, []);
 
@@ -63,10 +68,23 @@ export default function HomePage() {
   }, [ties]);
 
   useEffect(() => {
-    if (categories.length > 0 || localStorage.getItem('tieTrackCategories')) {
+    // Garantir que "Sem Categoria" exista se for necessário
+    const hasUncategorizedTies = ties.some(tie => tie.category === UNCATEGORIZED_LABEL);
+    const categoriesNeedsUpdate = (hasUncategorizedTies && !categories.includes(UNCATEGORIZED_LABEL)) ||
+                                 (categories.length === 0 && ties.length > 0);
+
+    if (categoriesNeedsUpdate) {
+      setCategories(prev => {
+        const newCategories = new Set(prev);
+        if (hasUncategorizedTies || prev.length === 0) newCategories.add(UNCATEGORIZED_LABEL);
+        const sorted = Array.from(newCategories).sort();
+        localStorage.setItem('tieTrackCategories', JSON.stringify(sorted));
+        return sorted;
+      });
+    } else if (categories.length > 0 || localStorage.getItem('tieTrackCategories')) {
         localStorage.setItem('tieTrackCategories', JSON.stringify(categories));
     }
-  }, [categories]);
+  }, [categories, ties]);
 
   const processImageAndGetUrl = async (imageFile: File | null | undefined, currentImageUrl?: string): Promise<string> => {
     if (imageFile) {
@@ -91,22 +109,21 @@ export default function HomePage() {
       toast({ title: "Erro", description: `A categoria "${trimmedName}" já existe.`, variant: "destructive" });
       return false;
     }
-    setCategories(prev => [...prev, trimmedName].sort());
+    setCategories(prev => {
+      const newCategories = [...prev, trimmedName].sort();
+      localStorage.setItem('tieTrackCategories', JSON.stringify(newCategories));
+      return newCategories;
+    });
     toast({ title: "Categoria Adicionada", description: `A categoria "${trimmedName}" foi adicionada.` });
     return true;
   };
 
-  const confirmDeleteCategory = (category: TieCategory) => {
-    if (category.toLowerCase() === 'todas' || category === UNCATEGORIZED_LABEL) {
-      toast({ title: "Ação não permitida", description: `A categoria "${category}" não pode ser removida.`, variant: "destructive" });
-      return;
+  // A função handleDeleteCategory agora é chamada pelo TieForm
+  const handleDeleteCategory = (categoryToDelete: TieCategory) => {
+    if (!categoryToDelete || categoryToDelete === UNCATEGORIZED_LABEL) {
+        toast({ title: "Ação não permitida", description: `A categoria "${categoryToDelete}" não pode ser removida.`, variant: "destructive" });
+        return;
     }
-    setCategoryToDelete(category);
-    setIsDeleteCategoryAlertOpen(true);
-  };
-
-  const handleDeleteCategory = () => {
-    if (!categoryToDelete) return;
 
     const updatedTies = ties.map(tie => {
       if (tie.category === categoryToDelete) {
@@ -118,35 +135,40 @@ export default function HomePage() {
 
     const updatedCategories = categories.filter(cat => cat !== categoryToDelete);
     
-    // Ensure "Sem Categoria" is present if there are ties in it
-    const hasUncategorizedTies = updatedTies.some(tie => tie.category === UNCATEGORIZED_LABEL);
-    if (hasUncategorizedTies && !updatedCategories.includes(UNCATEGORIZED_LABEL)) {
+    const hasRemainingUncategorizedTies = updatedTies.some(tie => tie.category === UNCATEGORIZED_LABEL);
+    if (hasRemainingUncategorizedTies && !updatedCategories.includes(UNCATEGORIZED_LABEL)) {
       updatedCategories.push(UNCATEGORIZED_LABEL);
-      updatedCategories.sort();
     }
     
-    setCategories(updatedCategories);
+    // Se não houver mais laços "Sem Categoria" e "Sem Categoria" não for uma das default, pode ser removida se estiver vazia
+    const noTiesInUncategorized = !updatedTies.some(tie => tie.category === UNCATEGORIZED_LABEL);
+    if (noTiesInUncategorized && updatedCategories.includes(UNCATEGORIZED_LABEL) && !defaultCategories.includes(UNCATEGORIZED_LABEL) && updatedCategories.length > 1) {
+        const finalCategories = updatedCategories.filter(cat => cat !== UNCATEGORIZED_LABEL);
+        setCategories(finalCategories.sort());
+        localStorage.setItem('tieTrackCategories', JSON.stringify(finalCategories.sort()));
+    } else {
+        setCategories(updatedCategories.sort());
+        localStorage.setItem('tieTrackCategories', JSON.stringify(updatedCategories.sort()));
+    }
     
-    // If the active tab was the one deleted, switch to "Todas"
     if (activeTab === categoryToDelete) {
         setActiveTab("Todas");
     }
 
-
     toast({ title: "Categoria Removida", description: `A categoria "${categoryToDelete}" foi removida. Gravatas movidas para "${UNCATEGORIZED_LABEL}".` });
-    setCategoryToDelete(null);
-    setIsDeleteCategoryAlertOpen(false);
   };
 
 
   const handleFormSubmit = async (data: TieFormData) => {
     const finalImageUrl = await processImageAndGetUrl(data.imageFile, data.imageUrl);
     
+    const tieCategory = data.category && data.category.trim() !== "" ? data.category : UNCATEGORIZED_LABEL;
+
     const tieData: Omit<Tie, 'id'> = {
       name: data.name!,
       quantity: data.quantity!,
       unitPrice: data.unitPrice!,
-      category: data.category! || UNCATEGORIZED_LABEL,
+      category: tieCategory,
       imageUrl: finalImageUrl,
     };
 
@@ -158,6 +180,24 @@ export default function HomePage() {
       setTies([...ties, newTie]);
       toast({ title: "Gravata Adicionada", description: `${data.name} foi adicionada ao seu inventário.` });
     }
+
+    // Se a categoria do laço for nova e não for "Sem Categoria", adiciona-a
+    if (!categories.includes(tieCategory) && tieCategory !== UNCATEGORIZED_LABEL) {
+      setCategories(prev => {
+        const newCategories = [...prev, tieCategory].sort();
+        localStorage.setItem('tieTrackCategories', JSON.stringify(newCategories));
+        return newCategories;
+      });
+    } else if (tieCategory === UNCATEGORIZED_LABEL && !categories.includes(UNCATEGORIZED_LABEL)) {
+      // Garante que "Sem Categoria" seja adicionada se for usada e não existir
+      setCategories(prev => {
+        const newCategories = [...prev, UNCATEGORIZED_LABEL].sort();
+        localStorage.setItem('tieTrackCategories', JSON.stringify(newCategories));
+        return newCategories;
+      });
+    }
+
+
     setEditingTie(undefined);
     setIsDialogOpen(false);
   };
@@ -185,6 +225,19 @@ export default function HomePage() {
   );
 
   const TABS_ORDER: string[] = ["Todas", ...categories.filter(c => c.toLowerCase() !== 'todas').sort()];
+  // Garante que UNCATEGORIZED_LABEL esteja no TABS_ORDER se existir em categories
+  if (categories.includes(UNCATEGORIZED_LABEL) && !TABS_ORDER.includes(UNCATEGORIZED_LABEL)) {
+    // Adiciona depois de "Todas" e antes de outras categorias ordenadas
+    const todasIndex = TABS_ORDER.indexOf("Todas");
+    if (todasIndex !== -1) {
+        TABS_ORDER.splice(todasIndex + 1, 0, UNCATEGORIZED_LABEL);
+    } else {
+        TABS_ORDER.unshift(UNCATEGORIZED_LABEL); // Caso "Todas" não exista por algum motivo
+    }
+  }
+  // Remove duplicatas se houver
+  const uniqueTabsOrder = Array.from(new Set(TABS_ORDER));
+
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -215,27 +268,17 @@ export default function HomePage() {
       <main className="container mx-auto p-4 md:p-8">
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
           <TabsList className="flex flex-wrap justify-start gap-2 mb-6 pb-2 border-b border-border">
-            {TABS_ORDER.map((category) => (
+            {uniqueTabsOrder.map((category) => (
               <div key={category} className="relative group">
-                <TabsTrigger value={category} className="text-sm px-3 py-1.5 h-auto pr-8">
+                <TabsTrigger value={category} className="text-sm px-3 py-1.5 h-auto"> {/* Removido pr-8 */}
                   {category}
                 </TabsTrigger>
-                {category.toLowerCase() !== "todas" && category !== UNCATEGORIZED_LABEL && (
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="absolute top-1/2 right-1 transform -translate-y-1/2 h-6 w-6 p-0 opacity-50 group-hover:opacity-100 text-muted-foreground hover:text-destructive"
-                    onClick={() => confirmDeleteCategory(category)}
-                    aria-label={`Remover categoria ${category}`}
-                  >
-                    <XIcon size={14} />
-                  </Button>
-                )}
+                {/* Botão de remover categoria foi movido para o TieForm */}
               </div>
             ))}
           </TabsList>
 
-          {TABS_ORDER.map((category) => {
+          {uniqueTabsOrder.map((category) => {
             const tiesForTab = category.toLowerCase() === "todas"
               ? filteredTies
               : filteredTies.filter(tie => tie.category === category);
@@ -257,24 +300,12 @@ export default function HomePage() {
         onOpenChange={setIsDialogOpen}
         onSubmit={handleFormSubmit}
         initialData={editingTie}
-        categories={categories.filter(c => c.toLowerCase() !== 'todas' && c !== UNCATEGORIZED_LABEL)}
+        allCategories={categories} // Passa todas as categorias
         onAddCategory={handleAddCategory}
+        onDeleteCategory={handleDeleteCategory} // Passa a função de deletar
       />
-
-      <AlertDialog open={isDeleteCategoryAlertOpen} onOpenChange={setIsDeleteCategoryAlertOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Confirmar Remoção</AlertDialogTitle>
-            <AlertDialogDescription>
-              Tem certeza que deseja remover a categoria "{categoryToDelete}"? As gravatas nesta categoria serão movidas para "{UNCATEGORIZED_LABEL}".
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => setCategoryToDelete(null)}>Cancelar</AlertDialogCancel>
-            <AlertDialogAction onClick={handleDeleteCategory}>Remover</AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      
+      {/* AlertDialog de confirmação de exclusão foi movido para TieForm */}
       
       <footer className="py-6 text-center text-sm text-muted-foreground border-t border-border mt-12">
         © {new Date().getFullYear()} TieTrack. Mantenha sua coleção organizada.
@@ -282,3 +313,4 @@ export default function HomePage() {
     </div>
   );
 }
+
