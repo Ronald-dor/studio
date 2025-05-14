@@ -12,7 +12,7 @@ const geistSans = Geist({
 
 export const metadata: Metadata = {
   title: 'TieTrack', // Updated application title
-  description: 'Manage your tie inventory with TieTrack.', // Updated description
+  description: 'Gerencie seu inventário de gravatas com o TieTrack.', // Updated description
 };
 
 export default function RootLayout({
@@ -21,7 +21,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
+    <html lang="pt-BR">
       <body className={`${geistSans.variable} antialiased`}>
         {children}
         <Toaster /> {/* Added Toaster component */}

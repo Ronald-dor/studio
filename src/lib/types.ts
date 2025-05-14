@@ -1,18 +1,14 @@
 import { z } from 'zod';
 
-// tieCategories constant is removed, categories are now dynamic strings.
-// export const tieCategories = ["Solid", "Striped", "Dotted", "Plaid", "Floral", "Paisley", "Geometric", "Novelty"] as const;
-
-// TieCategory is now a general string, as categories are dynamic.
 export type TieCategory = string;
+export const UNCATEGORIZED_LABEL = 'Sem Categoria';
 
 export const TieSchema = z.object({
   id: z.string().optional(),
-  name: z.string().min(1, { message: "Name is required." }).max(100, { message: "Name must be 100 characters or less." }),
-  quantity: z.coerce.number().int().min(0, { message: "Quantity must be a non-negative integer." }),
-  unitPrice: z.coerce.number().min(0, { message: "Unit price must be non-negative." }),
-  // Category is now a string, not an enum of predefined values.
-  category: z.string().min(1, { message: "Category is required."}),
+  name: z.string().min(1, { message: "O nome é obrigatório." }).max(100, { message: "O nome deve ter 100 caracteres ou menos." }),
+  quantity: z.coerce.number().int().min(0, { message: "A quantidade deve ser um número inteiro não negativo." }),
+  unitPrice: z.coerce.number().min(0, { message: "O preço unitário deve ser não negativo." }),
+  category: z.string().default(UNCATEGORIZED_LABEL), // Default to UNCATEGORIZED_LABEL if not provided
   imageUrl: z.string().default(`https://placehold.co/300x400.png`), 
 });
 

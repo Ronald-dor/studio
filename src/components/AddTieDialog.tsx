@@ -32,7 +32,7 @@ export function AddTieDialog({ open, onOpenChange, onSubmit, initialData, trigge
       {trigger && <DialogTrigger asChild>{trigger}</DialogTrigger>}
       <DialogContent className="sm:max-w-[600px] max-h-[90vh]">
         <DialogHeader>
-          <DialogTitle>{initialData?.id ? 'Edit Tie' : 'Add New Tie'}</DialogTitle>
+          <DialogTitle>{initialData?.id ? 'Editar Gravata' : 'Adicionar Nova Gravata'}</DialogTitle>
         </DialogHeader>
         <TieForm 
           onSubmit={internalSubmit} 

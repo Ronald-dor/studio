@@ -26,42 +26,42 @@ export function TieCard({ tie, onEdit, onDelete }: TieCardProps) {
             alt={tie.name} 
             layout="fill" 
             objectFit="cover" 
-            data-ai-hint="tie fashion"
+            data-ai-hint="gravata moda"
             className="bg-secondary"
           />
         </div>
         <CardTitle className="text-lg leading-tight">{tie.name}</CardTitle>
         <CardDescription className="flex items-center">
           <Tag size={14} className="mr-1 text-muted-foreground" /> 
-          <Badge variant="secondary">{tie.category}</Badge>
+          <Badge variant="secondary">{tie.category || 'Sem Categoria'}</Badge>
         </CardDescription>
       </CardHeader>
       <CardContent className="flex-grow space-y-2 text-sm">
         <div className="flex items-center justify-between">
           <span className="flex items-center text-muted-foreground">
-            <Package size={14} className="mr-1" /> Quantity:
+            <Package size={14} className="mr-1" /> Quantidade:
           </span>
           <span>{tie.quantity}</span>
         </div>
         <div className="flex items-center justify-between">
           <span className="flex items-center text-muted-foreground">
-            <DollarSign size={14} className="mr-1" /> Unit Price:
+            <DollarSign size={14} className="mr-1" /> Preço Unitário:
           </span>
-          <span>${tie.unitPrice.toFixed(2)}</span>
+          <span>R${tie.unitPrice.toFixed(2)}</span>
         </div>
         <div className="flex items-center justify-between font-semibold">
           <span className="flex items-center text-muted-foreground">
-            <DollarSign size={14} className="mr-1" /> Total Value:
+            <DollarSign size={14} className="mr-1" /> Valor Total:
           </span>
-          <span>${totalValue.toFixed(2)}</span>
+          <span>R${totalValue.toFixed(2)}</span>
         </div>
       </CardContent>
       <CardFooter className="flex justify-end space-x-2 pt-4">
-        <Button variant="outline" size="sm" onClick={() => onEdit(tie)} aria-label={`Edit ${tie.name}`}>
-          <Edit3 size={16} className="mr-1" /> Edit
+        <Button variant="outline" size="sm" onClick={() => onEdit(tie)} aria-label={`Editar ${tie.name}`}>
+          <Edit3 size={16} className="mr-1" /> Editar
         </Button>
-        <Button variant="destructive" size="sm" onClick={() => onDelete(tie.id)} aria-label={`Delete ${tie.name}`}>
-          <Trash2 size={16} className="mr-1" /> Delete
+        <Button variant="destructive" size="sm" onClick={() => onDelete(tie.id)} aria-label={`Remover ${tie.name}`}>
+          <Trash2 size={16} className="mr-1" /> Remover
         </Button>
       </CardFooter>
     </Card>

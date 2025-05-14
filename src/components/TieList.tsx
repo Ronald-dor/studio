@@ -15,8 +15,8 @@ export function TieList({ ties, onEdit, onDelete }: TieListProps) {
   if (ties.length === 0) {
     return (
       <div className="text-center py-10">
-        <p className="text-xl text-muted-foreground">No ties to display for the current selection.</p>
-        <p className="text-sm text-muted-foreground">Try a different category or search term, or add a new tie if your inventory is empty.</p>
+        <p className="text-xl text-muted-foreground">Nenhuma gravata para exibir para a seleção atual.</p>
+        <p className="text-sm text-muted-foreground">Tente uma categoria ou termo de pesquisa diferente, ou adicione uma nova gravata se seu inventário estiver vazio.</p>
       </div>
     );
   }
