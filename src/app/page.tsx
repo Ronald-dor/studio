@@ -15,10 +15,9 @@ const initialTiesData: Omit<Tie, 'id'>[] = [
   { name: 'Seda Azul Clássica', quantity: 10, unitPrice: 25, category: 'Lisa', imageUrl: 'https://placehold.co/300x400.png' },
   { name: 'Gravata Listrada Vermelha', quantity: 5, unitPrice: 30, category: 'Listrada', imageUrl: 'https://placehold.co/300x400.png' },
   { name: 'Gravata Borgonha Pontilhada', quantity: 8, unitPrice: 22, category: 'Pontilhada', imageUrl: 'https://placehold.co/300x400.png' },
-  { name: 'Gravata Xadrez Verde Lã', quantity: 3, unitPrice: 35, category: 'Xadrez', imageUrl: 'https://placehold.co/300x400.png' },
 ];
 
-const defaultCategories: TieCategory[] = ['Lisa', 'Listrada', 'Pontilhada', 'Xadrez', 'Floral', 'Paisley', 'Geométrica', 'Novidade'];
+const defaultCategories: TieCategory[] = ['Lisa', 'Listrada', 'Pontilhada'];
 const UNCATEGORIZED_LABEL = 'Sem Categoria';
 
 export default function HomePage() {
