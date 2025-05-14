@@ -3,7 +3,7 @@
 
 import type { ChangeEvent } from 'react';
 import React, { useState, useEffect } from 'react';
-import { useForm } from 'react-hook-form';
+import { useForm, useWatch } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import Image from 'next/image';
 import { Button } from '@/components/ui/button';
@@ -15,7 +15,7 @@ import type { TieFormData, TieCategory } from '@/lib/types';
 import { TieSchema, UNCATEGORIZED_LABEL } from '@/lib/types'; // Importado UNCATEGORIZED_LABEL
 import { Card, CardContent } from '@/components/ui/card';
 import { ScrollArea } from './ui/scroll-area';
-import { ImageUp, Plus, Trash2 } from 'lucide-react';
+import { ImageUp, Plus, Trash2, Coins } from 'lucide-react';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { useToast } from '@/hooks/use-toast';
 
@@ -46,6 +46,7 @@ export function TieForm({
 
   const [categoryToDelete, setCategoryToDelete] = useState<TieCategory | null>(null);
   const [isConfirmDeleteCategoryOpen, setIsConfirmDeleteCategoryOpen] = useState(false);
+  const [valueInQuantity, setValueInQuantity] = useState<number>(0);
 
 
   const form = useForm<TieFormData>({
@@ -60,6 +61,15 @@ export function TieForm({
     },
   });
 
+  const watchedQuantity = useWatch({ control: form.control, name: 'quantity' });
+  const watchedUnitPrice = useWatch({ control: form.control, name: 'unitPrice' });
+
+  useEffect(() => {
+    const quantity = watchedQuantity || 0;
+    const unitPrice = watchedUnitPrice || 0;
+    setValueInQuantity(quantity * unitPrice);
+  }, [watchedQuantity, watchedUnitPrice]);
+
   useEffect(() => {
     const defaultCat = formCategories.length > 0 ? formCategories[0] : UNCATEGORIZED_LABEL;
     if (initialData) {
@@ -68,6 +78,7 @@ export function TieForm({
             category: formCategories.includes(initialData.category) ? initialData.category : (initialData.category || defaultCat),
         });
         setPreviewUrl(initialData.imageUrl || null);
+        setValueInQuantity((initialData.quantity || 0) * (initialData.unitPrice || 0));
     } else {
         form.reset({
             name: '',
@@ -78,6 +89,7 @@ export function TieForm({
             imageFile: null,
         });
         setPreviewUrl(null);
+        setValueInQuantity(0);
     }
   }, [initialData, form, formCategories]);
 
@@ -108,6 +120,7 @@ export function TieForm({
     form.reset();
     setPreviewUrl(null);
     setImageFile(null);
+    setValueInQuantity(0);
   };
   
   const handleAddNewCategoryInDialog = async () => {
@@ -136,11 +149,14 @@ export function TieForm({
   const executeDeleteCategory = () => {
     if (categoryToDelete) {
       onDeleteCategory(categoryToDelete);
+      // Se a categoria deletada era a selecionada no formulário, reseta para a primeira disponível ou Sem Categoria
+      if (form.getValues('category') === categoryToDelete) {
+        const newFormCategories = formCategories.filter(cat => cat !== categoryToDelete);
+        form.setValue('category', newFormCategories.length > 0 ? newFormCategories[0] : UNCATEGORIZED_LABEL);
+      }
       setCategoryToDelete(null);
     }
     setIsConfirmDeleteCategoryOpen(false);
-    // O diálogo de gerenciamento de categorias pode permanecer aberto ou ser fechado.
-    // Por simplicidade, ele permanece aberto.
   };
 
   return (
@@ -172,7 +188,7 @@ export function TieForm({
                     <FormItem>
                       <FormLabel>Quantidade</FormLabel>
                       <FormControl>
-                        <Input type="number" placeholder="Ex: 10" {...field} onChange={e => field.onChange(parseInt(e.target.value,10) || 0)} value={field.value} />
+                        <Input type="number" placeholder="Ex: 10" {...field} onChange={e => field.onChange(parseInt(e.target.value,10) || 0)} value={field.value || 0} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -183,15 +199,29 @@ export function TieForm({
                   name="unitPrice"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Preço Unitário (R$)</FormLabel>
+                      <FormLabel>Valor Unitário (R$)</FormLabel>
                       <FormControl>
-                        <Input type="number" step="0.01" placeholder="Ex: 25.00" onChange={e => field.onChange(parseFloat(e.target.value) || 0)} value={field.value} />
+                        <Input type="number" step="0.01" placeholder="Ex: 25.00" onChange={e => field.onChange(parseFloat(e.target.value) || 0)} value={field.value || 0} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
                   )}
                 />
               </div>
+              
+              <FormItem>
+                <FormLabel className="flex items-center">
+                  <Coins size={14} className="mr-1 text-muted-foreground" />
+                  Valor em Quantidade (R$)
+                </FormLabel>
+                <Input
+                  type="text"
+                  value={valueInQuantity.toFixed(2)}
+                  readOnly
+                  className="bg-muted/50 border-muted text-muted-foreground"
+                />
+              </FormItem>
+
 
               <FormField
                 control={form.control}
@@ -323,7 +353,7 @@ export function TieForm({
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => setCategoryToDelete(null)}>Cancelar</AlertDialogCancel>
+            <AlertDialogCancel onClick={() => {setCategoryToDelete(null); setIsConfirmDeleteCategoryOpen(false);}}>Cancelar</AlertDialogCancel>
             <AlertDialogAction onClick={executeDeleteCategory} variant="destructive">Remover</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -331,3 +361,4 @@ export function TieForm({
     </Form>
   );
 }
+
