@@ -1,3 +1,4 @@
+
 "use client";
 
 import React from 'react';
@@ -5,7 +6,7 @@ import Image from 'next/image';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import type { Tie } from '@/lib/types';
-import { Edit3, Trash2, Package, DollarSign, Tag } from 'lucide-react';
+import { Edit3, Trash2, Package, DollarSign, Tag, Coins } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 
 interface TieCardProps {
@@ -15,7 +16,7 @@ interface TieCardProps {
 }
 
 export function TieCard({ tie, onEdit, onDelete }: TieCardProps) {
-  const totalValue = tie.quantity * tie.unitPrice;
+  const valueInQuantity = tie.quantity * tie.unitPrice;
 
   return (
     <Card className="flex flex-col h-full shadow-lg hover:shadow-xl transition-shadow duration-300">
@@ -45,15 +46,15 @@ export function TieCard({ tie, onEdit, onDelete }: TieCardProps) {
         </div>
         <div className="flex items-center justify-between">
           <span className="flex items-center text-muted-foreground">
-            <DollarSign size={14} className="mr-1" /> Preço Unitário:
+            <DollarSign size={14} className="mr-1" /> Valor Unitário:
           </span>
-          <span>R${tie.unitPrice.toFixed(2)}</span>
+          <span>{tie.unitPrice.toFixed(2)}</span>
         </div>
         <div className="flex items-center justify-between font-semibold">
           <span className="flex items-center text-muted-foreground">
-            <DollarSign size={14} className="mr-1" /> Valor Total:
+            <Coins size={14} className="mr-1" /> Valor em Quantidade:
           </span>
-          <span>R${totalValue.toFixed(2)}</span>
+          <span>{valueInQuantity.toFixed(2)}</span>
         </div>
       </CardContent>
       <CardFooter className="flex justify-end space-x-2 pt-4">
