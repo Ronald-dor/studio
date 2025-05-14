@@ -39,7 +39,7 @@ export function TieCard({ tie, onEdit, onDelete }: TieCardProps) {
       <CardContent className="flex-grow space-y-2 text-sm">
         <div className="flex items-center justify-between">
           <span className="flex items-center text-muted-foreground">
-            <Package size={14} className="mr-1" /> Quantidade:
+            <Package size={14} className="mr-1" /> Estoque:
           </span>
           <span>{tie.quantity}</span>
         </div>

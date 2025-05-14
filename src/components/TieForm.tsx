@@ -183,7 +183,7 @@ export function TieForm({
                   name="quantity"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Quantidade</FormLabel>
+                      <FormLabel>Estoque</FormLabel>
                       <FormControl>
                         <Input 
                           type="number" 
