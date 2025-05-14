@@ -7,10 +7,9 @@ import { Input } from '@/components/ui/input';
 import { TieList } from '@/components/TieList';
 import { AddTieDialog } from '@/components/AddTieDialog';
 import type { Tie, TieFormData, TieCategory } from '@/lib/types';
-import { PlusCircle, Shirt, Search } from 'lucide-react'; // Removido XIcon
+import { PlusCircle, Shirt, Search } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-// Removido AlertDialog de page.tsx pois a confirmação será feita em TieForm
 
 const initialTiesData: Omit<Tie, 'id'>[] = [
   { name: 'Seda Azul Clássica', quantity: 10, unitPrice: 25, category: 'Lisa', imageUrl: 'https://placehold.co/300x400.png' },
@@ -30,7 +29,6 @@ export default function HomePage() {
   const [searchTerm, setSearchTerm] = useState('');
   const { toast } = useToast();
   const [activeTab, setActiveTab] = useState<string>("Todas");
-  // Estados categoryToDelete e isDeleteCategoryAlertOpen foram removidos daqui
 
 
   useEffect(() => {
@@ -45,7 +43,6 @@ export default function HomePage() {
     const storedCategories = localStorage.getItem('tieTrackCategories');
     if (storedCategories) {
       const parsedCategories = JSON.parse(storedCategories);
-      // Garantir que "Sem Categoria" esteja presente se houver laços não categorizados ou se for a única opção
       const hasUncategorizedTies = (JSON.parse(storedTies || '[]') as Tie[]).some(tie => tie.category === UNCATEGORIZED_LABEL);
       const allCategories = new Set([...defaultCategories, ...parsedCategories]);
       if (hasUncategorizedTies || parsedCategories.length === 0) {
@@ -68,7 +65,6 @@ export default function HomePage() {
   }, [ties]);
 
   useEffect(() => {
-    // Garantir que "Sem Categoria" exista se for necessário
     const hasUncategorizedTies = ties.some(tie => tie.category === UNCATEGORIZED_LABEL);
     const categoriesNeedsUpdate = (hasUncategorizedTies && !categories.includes(UNCATEGORIZED_LABEL)) ||
                                  (categories.length === 0 && ties.length > 0);
@@ -118,7 +114,6 @@ export default function HomePage() {
     return true;
   };
 
-  // A função handleDeleteCategory agora é chamada pelo TieForm
   const handleDeleteCategory = (categoryToDelete: TieCategory) => {
     if (!categoryToDelete || categoryToDelete === UNCATEGORIZED_LABEL) {
         toast({ title: "Ação não permitida", description: `A categoria "${categoryToDelete}" não pode ser removida.`, variant: "destructive" });
@@ -140,7 +135,6 @@ export default function HomePage() {
       updatedCategories.push(UNCATEGORIZED_LABEL);
     }
     
-    // Se não houver mais laços "Sem Categoria" e "Sem Categoria" não for uma das default, pode ser removida se estiver vazia
     const noTiesInUncategorized = !updatedTies.some(tie => tie.category === UNCATEGORIZED_LABEL);
     if (noTiesInUncategorized && updatedCategories.includes(UNCATEGORIZED_LABEL) && !defaultCategories.includes(UNCATEGORIZED_LABEL) && updatedCategories.length > 1) {
         const finalCategories = updatedCategories.filter(cat => cat !== UNCATEGORIZED_LABEL);
@@ -181,7 +175,6 @@ export default function HomePage() {
       toast({ title: "Gravata Adicionada", description: `${data.name} foi adicionada ao seu inventário.` });
     }
 
-    // Se a categoria do laço for nova e não for "Sem Categoria", adiciona-a
     if (!categories.includes(tieCategory) && tieCategory !== UNCATEGORIZED_LABEL) {
       setCategories(prev => {
         const newCategories = [...prev, tieCategory].sort();
@@ -189,7 +182,6 @@ export default function HomePage() {
         return newCategories;
       });
     } else if (tieCategory === UNCATEGORIZED_LABEL && !categories.includes(UNCATEGORIZED_LABEL)) {
-      // Garante que "Sem Categoria" seja adicionada se for usada e não existir
       setCategories(prev => {
         const newCategories = [...prev, UNCATEGORIZED_LABEL].sort();
         localStorage.setItem('tieTrackCategories', JSON.stringify(newCategories));
@@ -225,22 +217,19 @@ export default function HomePage() {
   );
 
   const TABS_ORDER: string[] = ["Todas", ...categories.filter(c => c.toLowerCase() !== 'todas').sort()];
-  // Garante que UNCATEGORIZED_LABEL esteja no TABS_ORDER se existir em categories
   if (categories.includes(UNCATEGORIZED_LABEL) && !TABS_ORDER.includes(UNCATEGORIZED_LABEL)) {
-    // Adiciona depois de "Todas" e antes de outras categorias ordenadas
     const todasIndex = TABS_ORDER.indexOf("Todas");
     if (todasIndex !== -1) {
         TABS_ORDER.splice(todasIndex + 1, 0, UNCATEGORIZED_LABEL);
     } else {
-        TABS_ORDER.unshift(UNCATEGORIZED_LABEL); // Caso "Todas" não exista por algum motivo
+        TABS_ORDER.unshift(UNCATEGORIZED_LABEL);
     }
   }
-  // Remove duplicatas se houver
   const uniqueTabsOrder = Array.from(new Set(TABS_ORDER));
 
 
   return (
-    <div className="min-h-screen bg-background text-foreground">
+    <div className="min-h-screen bg-background text-foreground" suppressHydrationWarning={true}>
       <header className="py-6 px-4 md:px-8 border-b border-border sticky top-0 bg-background/80 backdrop-blur-md z-10">
         <div className="container mx-auto flex flex-col md:flex-row justify-between items-center gap-4">
           <div className="flex items-center space-x-2">
@@ -270,10 +259,9 @@ export default function HomePage() {
           <TabsList className="flex flex-wrap justify-start gap-2 mb-6 pb-2 border-b border-border">
             {uniqueTabsOrder.map((category) => (
               <div key={category} className="relative group">
-                <TabsTrigger value={category} className="text-sm px-3 py-1.5 h-auto"> {/* Removido pr-8 */}
+                <TabsTrigger value={category} className="text-sm px-3 py-1.5 h-auto">
                   {category}
                 </TabsTrigger>
-                {/* Botão de remover categoria foi movido para o TieForm */}
               </div>
             ))}
           </TabsList>
@@ -300,12 +288,10 @@ export default function HomePage() {
         onOpenChange={setIsDialogOpen}
         onSubmit={handleFormSubmit}
         initialData={editingTie}
-        allCategories={categories} // Passa todas as categorias
+        allCategories={categories}
         onAddCategory={handleAddCategory}
-        onDeleteCategory={handleDeleteCategory} // Passa a função de deletar
+        onDeleteCategory={handleDeleteCategory}
       />
-      
-      {/* AlertDialog de confirmação de exclusão foi movido para TieForm */}
       
       <footer className="py-6 text-center text-sm text-muted-foreground border-t border-border mt-12">
         © {new Date().getFullYear()} TieTrack. Mantenha sua coleção organizada.
@@ -313,4 +299,3 @@ export default function HomePage() {
     </div>
   );
 }
-
