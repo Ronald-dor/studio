@@ -1,7 +1,7 @@
 
 "use client";
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { TieList } from '@/components/TieList';
@@ -29,57 +29,95 @@ export default function HomePage() {
   const { toast } = useToast();
   const [activeTab, setActiveTab] = useState<string>("Todas");
 
-
+  // Load ties and categories from localStorage on initial mount
   useEffect(() => {
-    const storedTies = localStorage.getItem('tieTrackTies');
-    if (storedTies) {
-      setTies(JSON.parse(storedTies));
+    let activeTies: Tie[] = [];
+    const storedTiesData = localStorage.getItem('tieTrackTies');
+    if (storedTiesData) {
+      activeTies = JSON.parse(storedTiesData);
+      setTies(activeTies);
     } else {
       const tiesWithIds = initialTiesData.map(tie => ({ ...tie, id: crypto.randomUUID(), valueInQuantity: tie.valueInQuantity || (tie.quantity * tie.unitPrice) }));
       setTies(tiesWithIds);
+      activeTies = tiesWithIds;
     }
 
-    const storedCategories = localStorage.getItem('tieTrackCategories');
-    if (storedCategories) {
-      const parsedCategories = JSON.parse(storedCategories);
-      const hasUncategorizedTies = (JSON.parse(storedTies || '[]') as Tie[]).some(tie => tie.category === UNCATEGORIZED_LABEL);
-      const allCategories = new Set([...defaultCategories, ...parsedCategories]);
-      if (hasUncategorizedTies || parsedCategories.length === 0) {
-        allCategories.add(UNCATEGORIZED_LABEL);
+    const storedCategoriesData = localStorage.getItem('tieTrackCategories');
+    if (storedCategoriesData) {
+      const parsedCategories = JSON.parse(storedCategoriesData) as TieCategory[];
+      const hasUncategorizedTies = activeTies.some(tie => tie.category === UNCATEGORIZED_LABEL);
+      
+      let finalCategoriesSet = new Set(parsedCategories);
+      if (hasUncategorizedTies && !parsedCategories.includes(UNCATEGORIZED_LABEL)) {
+        finalCategoriesSet.add(UNCATEGORIZED_LABEL);
       }
-      setCategories(Array.from(allCategories).sort());
+      
+      const noTiesInUncategorized = !activeTies.some(tie => tie.category === UNCATEGORIZED_LABEL);
+      const canRemoveUncategorized = noTiesInUncategorized && 
+                                   parsedCategories.includes(UNCATEGORIZED_LABEL) &&
+                                   !defaultCategories.includes(UNCATEGORIZED_LABEL) &&
+                                   parsedCategories.filter(c => c !== UNCATEGORIZED_LABEL).length > 0;
+
+      if (canRemoveUncategorized) {
+        finalCategoriesSet.delete(UNCATEGORIZED_LABEL);
+      }
+      setCategories(Array.from(finalCategoriesSet).sort());
     } else {
-      const catsFromInitialTies = initialTiesData.map(tie => tie.category);
-      const initialSetupCategories = new Set([...defaultCategories, ...catsFromInitialTies, UNCATEGORIZED_LABEL]);
-      const sortedInitialCategories = Array.from(initialSetupCategories).sort();
-      setCategories(sortedInitialCategories);
-      localStorage.setItem('tieTrackCategories', JSON.stringify(sortedInitialCategories));
+      const catsFromInitialActiveTies = activeTies.map(tie => tie.category);
+      const initialSetupCategoriesSet = new Set([...defaultCategories, ...catsFromInitialActiveTies]);
+      const hasUncategorizedInActiveTies = activeTies.some(tie => tie.category === UNCATEGORIZED_LABEL);
+
+      if (hasUncategorizedInActiveTies || initialSetupCategoriesSet.size === 0 ) {
+        initialSetupCategoriesSet.add(UNCATEGORIZED_LABEL);
+      }
+      
+      setCategories(Array.from(initialSetupCategoriesSet).sort());
     }
   }, []);
 
+  // Save ties to localStorage whenever they change
   useEffect(() => {
-    if (ties.length > 0 || localStorage.getItem('tieTrackTies')) {
-        localStorage.setItem('tieTrackTies', JSON.stringify(ties));
-    }
+    localStorage.setItem('tieTrackTies', JSON.stringify(ties));
   }, [ties]);
 
+  // Save categories to localStorage whenever they change
+  useEffect(() => {
+    localStorage.setItem('tieTrackCategories', JSON.stringify(categories));
+  }, [categories]);
+
+  // Manage UNCATEGORIZED_LABEL based on ties and categories
   useEffect(() => {
     const hasUncategorizedTies = ties.some(tie => tie.category === UNCATEGORIZED_LABEL);
-    const categoriesNeedsUpdate = (hasUncategorizedTies && !categories.includes(UNCATEGORIZED_LABEL)) ||
-                                 (categories.length === 0 && ties.length > 0);
+    let categoriesStateChanged = false;
+    let newCategoriesSnapshot = [...categories];
 
-    if (categoriesNeedsUpdate) {
-      setCategories(prev => {
-        const newCategories = new Set(prev);
-        if (hasUncategorizedTies || prev.length === 0) newCategories.add(UNCATEGORIZED_LABEL);
-        const sorted = Array.from(newCategories).sort();
-        localStorage.setItem('tieTrackCategories', JSON.stringify(sorted));
-        return sorted;
-      });
-    } else if (categories.length > 0 || localStorage.getItem('tieTrackCategories')) {
-        localStorage.setItem('tieTrackCategories', JSON.stringify(categories));
+    if (hasUncategorizedTies && !newCategoriesSnapshot.includes(UNCATEGORIZED_LABEL)) {
+      newCategoriesSnapshot.push(UNCATEGORIZED_LABEL);
+      categoriesStateChanged = true;
+    } else if (!hasUncategorizedTies && newCategoriesSnapshot.includes(UNCATEGORIZED_LABEL)) {
+      const isDefaultUncategorized = defaultCategories.includes(UNCATEGORIZED_LABEL);
+      const otherCategoriesExist = newCategoriesSnapshot.filter(c => c !== UNCATEGORIZED_LABEL).length > 0;
+      
+      if (!isDefaultUncategorized && otherCategoriesExist) {
+        newCategoriesSnapshot = newCategoriesSnapshot.filter(cat => cat !== UNCATEGORIZED_LABEL);
+        categoriesStateChanged = true;
+      } else if (!isDefaultUncategorized && !otherCategoriesExist && defaultCategories.length === 0 && newCategoriesSnapshot.length === 1 && newCategoriesSnapshot[0] === UNCATEGORIZED_LABEL) {
+        // If UNCATEGORIZED_LABEL is the only category, no ties use it, it's not a default, and no other default categories exist
+        // This case might lead to an empty categories list if not handled carefully.
+        // For now, the `otherCategoriesExist` condition prevents removing it if it's the last one.
+      }
     }
-  }, [categories, ties]);
+
+    if (categoriesStateChanged) {
+      // Check if the sorted new list is actually different from the current sorted list
+      const sortedNewCategories = newCategoriesSnapshot.sort();
+      const sortedCurrentCategories = [...categories].sort();
+      if (JSON.stringify(sortedNewCategories) !== JSON.stringify(sortedCurrentCategories)) {
+        setCategories(sortedNewCategories);
+      }
+    }
+  }, [ties, categories]); // defaultCategories is stable, not needed in deps
+
 
   const processImageAndGetUrl = async (imageFile: File | null | undefined, currentImageUrl?: string): Promise<string> => {
     if (imageFile) {
@@ -94,7 +132,7 @@ export default function HomePage() {
     return currentImageUrl || `https://placehold.co/300x400.png`;
   };
 
-  const handleAddCategory = async (categoryName: string): Promise<boolean> => {
+  const handleAddCategory = useCallback(async (categoryName: string): Promise<boolean> => {
     const trimmedName = categoryName.trim();
     if (!trimmedName) {
       toast({ title: "Erro", description: "O nome da categoria não pode estar vazio.", variant: "destructive" });
@@ -104,16 +142,12 @@ export default function HomePage() {
       toast({ title: "Erro", description: `A categoria "${trimmedName}" já existe.`, variant: "destructive" });
       return false;
     }
-    setCategories(prev => {
-      const newCategories = [...prev, trimmedName].sort();
-      localStorage.setItem('tieTrackCategories', JSON.stringify(newCategories));
-      return newCategories;
-    });
+    setCategories(prev => [...prev, trimmedName].sort());
     toast({ title: "Categoria Adicionada", description: `A categoria "${trimmedName}" foi adicionada.` });
     return true;
-  };
+  }, [categories, toast]);
 
-  const handleDeleteCategory = (categoryToDelete: TieCategory) => {
+  const handleDeleteCategory = useCallback((categoryToDelete: TieCategory) => {
     if (!categoryToDelete || categoryToDelete === UNCATEGORIZED_LABEL) {
         toast({ title: "Ação não permitida", description: `A categoria "${categoryToDelete}" não pode ser removida.`, variant: "destructive" });
         return;
@@ -127,32 +161,33 @@ export default function HomePage() {
     });
     setTies(updatedTies);
 
-    const updatedCategories = categories.filter(cat => cat !== categoryToDelete);
-    
+    let updatedCategories = categories.filter(cat => cat !== categoryToDelete);
     const hasRemainingUncategorizedTies = updatedTies.some(tie => tie.category === UNCATEGORIZED_LABEL);
+
     if (hasRemainingUncategorizedTies && !updatedCategories.includes(UNCATEGORIZED_LABEL)) {
       updatedCategories.push(UNCATEGORIZED_LABEL);
     }
     
     const noTiesInUncategorized = !updatedTies.some(tie => tie.category === UNCATEGORIZED_LABEL);
-    if (noTiesInUncategorized && updatedCategories.includes(UNCATEGORIZED_LABEL) && !defaultCategories.includes(UNCATEGORIZED_LABEL) && updatedCategories.length > 1) {
-        const finalCategories = updatedCategories.filter(cat => cat !== UNCATEGORIZED_LABEL);
-        setCategories(finalCategories.sort());
-        localStorage.setItem('tieTrackCategories', JSON.stringify(finalCategories.sort()));
-    } else {
-        setCategories(updatedCategories.sort());
-        localStorage.setItem('tieTrackCategories', JSON.stringify(updatedCategories.sort()));
+    if (noTiesInUncategorized && 
+        updatedCategories.includes(UNCATEGORIZED_LABEL) && 
+        !defaultCategories.includes(UNCATEGORIZED_LABEL) && 
+        updatedCategories.filter(c => c !== UNCATEGORIZED_LABEL).length > 0
+    ) {
+        updatedCategories = updatedCategories.filter(cat => cat !== UNCATEGORIZED_LABEL);
     }
+    
+    setCategories(updatedCategories.sort());
     
     if (activeTab === categoryToDelete) {
         setActiveTab("Todas");
     }
 
     toast({ title: "Categoria Removida", description: `A categoria "${categoryToDelete}" foi removida. Gravatas movidas para "${UNCATEGORIZED_LABEL}".` });
-  };
+  }, [ties, categories, activeTab, toast]);
 
 
-  const handleFormSubmit = async (data: TieFormData) => {
+  const handleFormSubmit = useCallback(async (data: TieFormData) => {
     const finalImageUrl = await processImageAndGetUrl(data.imageFile, data.imageUrl);
     
     const tieCategory = data.category && data.category.trim() !== "" ? data.category : UNCATEGORIZED_LABEL;
@@ -167,32 +202,21 @@ export default function HomePage() {
     };
 
     if (editingTie?.id) {
-      setTies(ties.map(t => t.id === editingTie.id ? { ...tieData, id: editingTie.id } : t));
+      setTies(prevTies => prevTies.map(t => t.id === editingTie.id ? { ...tieData, id: editingTie.id } : t));
       toast({ title: "Gravata Atualizada", description: `${data.name} foi atualizada.` });
     } else {
       const newTie: Tie = { ...tieData, id: crypto.randomUUID() };
-      setTies([...ties, newTie]);
+      setTies(prevTies => [...prevTies, newTie]);
       toast({ title: "Gravata Adicionada", description: `${data.name} foi adicionada ao seu inventário.` });
     }
 
-    if (!categories.includes(tieCategory) && tieCategory !== UNCATEGORIZED_LABEL) {
-      setCategories(prev => {
-        const newCategories = [...prev, tieCategory].sort();
-        localStorage.setItem('tieTrackCategories', JSON.stringify(newCategories));
-        return newCategories;
-      });
-    } else if (tieCategory === UNCATEGORIZED_LABEL && !categories.includes(UNCATEGORIZED_LABEL)) {
-      setCategories(prev => {
-        const newCategories = [...prev, UNCATEGORIZED_LABEL].sort();
-        localStorage.setItem('tieTrackCategories', JSON.stringify(newCategories));
-        return newCategories;
-      });
+    if (!categories.includes(tieCategory)) {
+      setCategories(prev => [...prev, tieCategory].sort());
     }
-
 
     setEditingTie(undefined);
     setIsDialogOpen(false);
-  };
+  }, [categories, editingTie, toast]);
 
   const handleEditTie = (tie: Tie) => {
     setEditingTie({ ...tie, imageFile: null });
@@ -201,7 +225,7 @@ export default function HomePage() {
 
   const handleDeleteTie = (id: string) => {
     const tieToDelete = ties.find(t => t.id === id);
-    setTies(ties.filter(t => t.id !== id));
+    setTies(prevTies => prevTies.filter(t => t.id !== id));
     if (tieToDelete) {
       toast({ title: "Gravata Removida", description: `${tieToDelete.name} foi removida.`, variant: "destructive" });
     }
@@ -216,16 +240,48 @@ export default function HomePage() {
     tie.name.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  const TABS_ORDER: string[] = ["Todas", ...categories.filter(c => c.toLowerCase() !== 'todas').sort()];
-  if (categories.includes(UNCATEGORIZED_LABEL) && !TABS_ORDER.includes(UNCATEGORIZED_LABEL)) {
-    const todasIndex = TABS_ORDER.indexOf("Todas");
-    if (todasIndex !== -1) {
-        TABS_ORDER.splice(todasIndex + 1, 0, UNCATEGORIZED_LABEL);
-    } else {
-        TABS_ORDER.unshift(UNCATEGORIZED_LABEL);
-    }
+  const TABS_ORDER: string[] = ["Todas", ...categories.filter(c => c.toLowerCase() !== 'todas' && c !== UNCATEGORIZED_LABEL).sort()];
+  if (categories.includes(UNCATEGORIZED_LABEL)) {
+      const todasIndex = TABS_ORDER.indexOf("Todas");
+      if (todasIndex !== -1 && !TABS_ORDER.includes(UNCATEGORIZED_LABEL)) {
+          TABS_ORDER.splice(todasIndex + 1, 0, UNCATEGORIZED_LABEL);
+      } else if (!TABS_ORDER.includes(UNCATEGORIZED_LABEL)) {
+          TABS_ORDER.unshift(UNCATEGORIZED_LABEL); // Fallback if "Todas" isn't there for some reason
+      }
   }
-  const uniqueTabsOrder = Array.from(new Set(TABS_ORDER));
+  // Ensure "Todas" is first if present, then "Sem Categoria" if present, then others sorted.
+  let finalTabsOrder: string[] = [];
+  if (categories.includes("Todas") || TABS_ORDER.includes("Todas")) finalTabsOrder.push("Todas"); // Should always be true based on TABS_ORDER init
+  
+  const uniqueSortedCategories = Array.from(new Set(categories)).sort();
+  
+  if (uniqueSortedCategories.includes(UNCATEGORIZED_LABEL) && UNCATEGORIZED_LABEL !== "Todas") {
+    finalTabsOrder.push(UNCATEGORIZED_LABEL);
+  }
+  uniqueSortedCategories.forEach(cat => {
+    if (cat !== "Todas" && cat !== UNCATEGORIZED_LABEL && !finalTabsOrder.includes(cat)) {
+      finalTabsOrder.push(cat);
+    }
+  });
+   // If "Todas" was not in categories for some reason, but is in TABS_ORDER, add it first.
+  if (!finalTabsOrder.includes("Todas") && TABS_ORDER.includes("Todas")) {
+    finalTabsOrder.unshift("Todas");
+  }
+  // If categories is empty, ensure "Todas" and "Sem Categoria" (if relevant via initial ties) are options
+   if (finalTabsOrder.length === 0 && (ties.length > 0 || initialTiesData.length > 0)) {
+     finalTabsOrder.push("Todas");
+     if (ties.some(t => t.category === UNCATEGORIZED_LABEL) || initialTiesData.some(t => t.category === UNCATEGORIZED_LABEL) || categories.includes(UNCATEGORIZED_LABEL)) {
+        if(!finalTabsOrder.includes(UNCATEGORIZED_LABEL)) finalTabsOrder.push(UNCATEGORIZED_LABEL);
+     }
+   } else if (finalTabsOrder.length === 0) { // Truly empty state
+      finalTabsOrder.push("Todas");
+      finalTabsOrder.push(UNCATEGORIZED_LABEL); // Default to show it if no categories defined
+   }
+   // Ensure "Todas" is present even if categories are empty, and ensure unique tabs
+   const tabsToDisplay = Array.from(new Set(finalTabsOrder));
+   if (!tabsToDisplay.includes("Todas")) {
+    tabsToDisplay.unshift("Todas");
+   }
 
 
   return (
@@ -257,7 +313,7 @@ export default function HomePage() {
       <main className="container mx-auto p-4 md:p-8">
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
           <TabsList className="flex flex-wrap justify-start gap-2 mb-6 pb-2 border-b border-border">
-            {uniqueTabsOrder.map((category) => (
+            {tabsToDisplay.map((category) => (
               <div key={category} className="relative group">
                 <TabsTrigger value={category} className="text-sm px-3 py-1.5 h-auto">
                   {category}
@@ -266,7 +322,7 @@ export default function HomePage() {
             ))}
           </TabsList>
 
-          {uniqueTabsOrder.map((category) => {
+          {tabsToDisplay.map((category) => {
             const tiesForTab = category.toLowerCase() === "todas"
               ? filteredTies
               : filteredTies.filter(tie => tie.category === category);
@@ -288,7 +344,7 @@ export default function HomePage() {
         onOpenChange={setIsDialogOpen}
         onSubmit={handleFormSubmit}
         initialData={editingTie}
-        allCategories={categories}
+        allCategories={categories} // Pass all categories for management and dropdown
         onAddCategory={handleAddCategory}
         onDeleteCategory={handleDeleteCategory}
       />
@@ -299,3 +355,5 @@ export default function HomePage() {
     </div>
   );
 }
+
+    
