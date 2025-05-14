@@ -1,3 +1,4 @@
+
 import type { Metadata } from 'next';
 import { Geist } from 'next/font/google'; // Using Geist Sans as primary font
 import './globals.css';
@@ -22,7 +23,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="pt-BR">
-      <body className={`${geistSans.variable} antialiased`}>
+      <body className={`${geistSans.variable} antialiased`} suppressHydrationWarning>
         {children}
         <Toaster /> {/* Added Toaster component */}
       </body>
