@@ -1,13 +1,16 @@
+
 "use client";
 
 import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input'; // Added Input
+import { Input } from '@/components/ui/input';
 import { TieList } from '@/components/TieList';
 import { AddTieDialog } from '@/components/AddTieDialog';
 import type { Tie, TieFormData, TieCategory } from '@/lib/types';
-import { PlusCircle, Shirt, Search } from 'lucide-react'; // Added Search
+import { tieCategories } from '@/lib/types'; // Import all predefined categories
+import { PlusCircle, Shirt, Search } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 const initialTiesData: Omit<Tie, 'id'>[] = [
   { name: 'Classic Silk Blue', quantity: 10, unitPrice: 25, category: 'Solid', imageUrl: 'https://placehold.co/300x400.png' },
@@ -21,24 +24,21 @@ export default function HomePage() {
   const [ties, setTies] = useState<Tie[]>([]);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingTie, setEditingTie] = useState<TieFormData | undefined>(undefined);
-  const [searchTerm, setSearchTerm] = useState(''); // Added searchTerm state
+  const [searchTerm, setSearchTerm] = useState('');
   const { toast } = useToast();
 
   useEffect(() => {
-    // Load ties from localStorage or use initial data
     const storedTies = localStorage.getItem('tieTrackTies');
     if (storedTies) {
       setTies(JSON.parse(storedTies));
     } else {
-      // Initialize with UUIDs
       const tiesWithIds = initialTiesData.map(tie => ({ ...tie, id: crypto.randomUUID() }));
       setTies(tiesWithIds);
     }
   }, []);
 
   useEffect(() => {
-    // Save ties to localStorage whenever they change
-    if (ties.length > 0 || localStorage.getItem('tieTrackTies')) { // only save if ties initialized or already exist
+    if (ties.length > 0 || localStorage.getItem('tieTrackTies')) {
         localStorage.setItem('tieTrackTies', JSON.stringify(ties));
     }
   }, [ties]);
@@ -68,11 +68,9 @@ export default function HomePage() {
     };
 
     if (editingTie?.id) {
-      // Editing existing tie
       setTies(ties.map(t => t.id === editingTie.id ? { ...tieData, id: editingTie.id } : t));
       toast({ title: "Tie Updated", description: `${data.name} has been updated.` });
     } else {
-      // Adding new tie
       const newTie: Tie = { ...tieData, id: crypto.randomUUID() };
       setTies([...ties, newTie]);
       toast({ title: "Tie Added", description: `${data.name} has been added to your inventory.` });
@@ -82,7 +80,7 @@ export default function HomePage() {
   };
 
   const handleEditTie = (tie: Tie) => {
-    setEditingTie({ ...tie, imageFile: null }); // imageFile is for new uploads
+    setEditingTie({ ...tie, imageFile: null });
     setIsDialogOpen(true);
   };
 
@@ -102,6 +100,8 @@ export default function HomePage() {
   const filteredTies = ties.filter(tie =>
     tie.name.toLowerCase().includes(searchTerm.toLowerCase())
   );
+
+  const TABS_ORDER: (TieCategory | "All")[] = ["All", ...tieCategories];
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -130,7 +130,30 @@ export default function HomePage() {
       </header>
 
       <main className="container mx-auto p-4 md:p-8">
-        <TieList ties={filteredTies} onEdit={handleEditTie} onDelete={handleDeleteTie} />
+        <Tabs defaultValue="All" className="w-full">
+          <TabsList className="flex flex-wrap justify-start gap-2 mb-6 pb-2 border-b border-border">
+            {TABS_ORDER.map((category) => (
+              <TabsTrigger key={category} value={category} className="text-sm px-3 py-1.5 h-auto">
+                {category}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+
+          {TABS_ORDER.map((category) => {
+            const tiesForTab = category === "All"
+              ? filteredTies
+              : filteredTies.filter(tie => tie.category === category);
+            return (
+              <TabsContent key={category} value={category} className="mt-0">
+                <TieList
+                  ties={tiesForTab}
+                  onEdit={handleEditTie}
+                  onDelete={handleDeleteTie}
+                />
+              </TabsContent>
+            );
+          })}
+        </Tabs>
       </main>
 
       <AddTieDialog
