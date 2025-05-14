@@ -2,7 +2,7 @@
 "use client";
 
 import type { ChangeEvent } from 'react';
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import Image from 'next/image';
@@ -15,9 +15,10 @@ import type { TieFormData, TieCategory } from '@/lib/types';
 import { TieSchema, UNCATEGORIZED_LABEL } from '@/lib/types';
 import { Card, CardContent } from '@/components/ui/card';
 import { ScrollArea } from './ui/scroll-area';
-import { ImageUp, Plus, Trash2, Coins } from 'lucide-react';
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
+import { ImageUp, Plus, Trash2, Coins, Camera, Check, RefreshCcw, VideoOff } from 'lucide-react';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 import { useToast } from '@/hooks/use-toast';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 
 interface TieFormProps {
   onSubmit: (data: TieFormData) => void;
@@ -46,6 +47,15 @@ export function TieForm({
 
   const [categoryToDelete, setCategoryToDelete] = useState<TieCategory | null>(null);
   const [isConfirmDeleteCategoryOpen, setIsConfirmDeleteCategoryOpen] = useState(false);
+
+  // Webcam states
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [isWebcamDialogOpen, setIsWebcamDialogOpen] = useState(false);
+  const [hasCameraPermission, setHasCameraPermission] = useState<boolean | null>(null);
+  const [webcamStream, setWebcamStream] = useState<MediaStream | null>(null);
+  const [capturedImageDataUrl, setCapturedImageDataUrl] = useState<string | null>(null);
+
 
   const form = useForm<TieFormData>({ 
     resolver: zodResolver(TieSchema),
@@ -94,9 +104,13 @@ export function TieForm({
         setPreviewUrl(reader.result as string);
       };
       reader.readAsDataURL(file);
+      setCapturedImageDataUrl(null); // Clear any webcam capture
     } else {
       setImageFile(null);
-      setPreviewUrl(initialData?.imageUrl || `https://placehold.co/300x400.png`);
+      // Do not reset previewUrl if it came from webcam or initial data
+      if (!capturedImageDataUrl) {
+        setPreviewUrl(initialData?.imageUrl || `https://placehold.co/300x400.png`);
+      }
     }
   };
 
@@ -120,6 +134,7 @@ export function TieForm({
     });
     setPreviewUrl(null);
     setImageFile(null);
+    setCapturedImageDataUrl(null);
   };
   
   const handleAddNewCategoryInDialog = async () => {
@@ -156,7 +171,89 @@ export function TieForm({
     setIsConfirmDeleteCategoryOpen(false);
   };
 
+  // Webcam Logic
+  const startWebcam = async () => {
+    if (webcamStream) {
+      webcamStream.getTracks().forEach(track => track.stop());
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+      setWebcamStream(stream);
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+      }
+      setHasCameraPermission(true);
+    } catch (error) {
+      console.error('Error accessing camera:', error);
+      setHasCameraPermission(false);
+      toast({
+        variant: 'destructive',
+        title: 'Acesso à câmera negado',
+        description: 'Por favor, habilite a permissão da câmera nas configurações do seu navegador.',
+      });
+    }
+  };
+
+  const stopWebcam = () => {
+    if (webcamStream) {
+      webcamStream.getTracks().forEach(track => track.stop());
+      setWebcamStream(null);
+    }
+  };
+
+  useEffect(() => {
+    if (isWebcamDialogOpen && !capturedImageDataUrl) {
+      startWebcam();
+    } else if (!isWebcamDialogOpen || capturedImageDataUrl) {
+      stopWebcam();
+    }
+    return () => {
+      stopWebcam(); // Ensure webcam is stopped on component unmount or dialog close
+    };
+  }, [isWebcamDialogOpen, capturedImageDataUrl]);
+
+  const handleOpenWebcamDialog = () => {
+    setCapturedImageDataUrl(null);
+    setHasCameraPermission(null); // Reset permission status to re-check
+    setIsWebcamDialogOpen(true);
+  };
+
+  const handleCaptureImage = () => {
+    if (videoRef.current && canvasRef.current && webcamStream) {
+      const video = videoRef.current;
+      const canvas = canvasRef.current;
+      // Ensure canvas dimensions match video's rendered dimensions for accurate capture
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      const context = canvas.getContext('2d');
+      if (context) {
+        context.drawImage(video, 0, 0, canvas.width, canvas.height);
+        const dataUrl = canvas.toDataURL('image/webp'); // Using webp for potentially smaller file sizes
+        setCapturedImageDataUrl(dataUrl);
+        // Webcam will be stopped by useEffect reacting to capturedImageDataUrl change
+      }
+    } else {
+      toast({ variant: "destructive", title: "Erro ao capturar", description: "Não foi possível acessar a stream de vídeo."});
+    }
+  };
+
+  const handleRetakePhoto = () => {
+    setCapturedImageDataUrl(null); // This will trigger useEffect to restart webcam
+  };
+
+  const handleUseCapturedImage = () => {
+    if (capturedImageDataUrl) {
+      setPreviewUrl(capturedImageDataUrl);
+      setImageFile(null); // Clear any selected file
+      form.setValue('imageUrl', capturedImageDataUrl);
+      form.setValue('imageFile', null);
+      setIsWebcamDialogOpen(false);
+      // capturedImageDataUrl will be reset by handleOpenWebcamDialog or useEffect cleanup
+    }
+  };
+
   return (
+    <>
     <Form {...form}>
       <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-6">
         <Card className="shadow-none border-none"> 
@@ -282,9 +379,14 @@ export function TieForm({
               
               <FormItem>
                 <FormLabel>Imagem</FormLabel>
-                <FormControl>
-                  <Input type="file" accept="image/*" onChange={handleImageChange} className="dark:file:text-primary-foreground"/>
-                </FormControl>
+                <div className="flex items-center gap-2">
+                    <FormControl className="flex-grow">
+                        <Input type="file" accept="image/*" onChange={handleImageChange} className="dark:file:text-primary-foreground"/>
+                    </FormControl>
+                    <Button type="button" variant="outline" size="icon" onClick={handleOpenWebcamDialog} aria-label="Tirar Foto">
+                        <Camera size={16} />
+                    </Button>
+                </div>
                 {previewUrl && (
                   <div className="mt-4 relative w-full aspect-[3/4] max-w-xs mx-auto rounded-md overflow-hidden border border-muted">
                     <Image src={previewUrl} alt="Prévia da gravata" layout="fill" objectFit="cover" data-ai-hint="gravata moda" />
@@ -308,7 +410,68 @@ export function TieForm({
           <Button type="submit" variant="default">{initialData?.id ? 'Salvar Alterações' : 'Adicionar Gravata'}</Button>
         </div>
       </form>
+    </Form>
 
+    {/* Hidden canvas for capturing webcam frame */}
+    <canvas ref={canvasRef} style={{ display: 'none' }} />
+
+    {/* Webcam Dialog */}
+    <AlertDialog open={isWebcamDialogOpen} onOpenChange={setIsWebcamDialogOpen}>
+      <AlertDialogContent className="sm:max-w-lg">
+        <AlertDialogHeader>
+          <AlertDialogTitle>Tirar Foto com Webcam</AlertDialogTitle>
+        </AlertDialogHeader>
+        <div className="py-4 space-y-4">
+          {hasCameraPermission === false && (
+            <Alert variant="destructive">
+              <VideoOff className="h-4 w-4" />
+              <AlertTitle>Acesso à Câmera Negado</AlertTitle>
+              <AlertDescription>
+                Para tirar uma foto, por favor, permita o acesso à câmera nas configurações do seu navegador e tente novamente.
+              </AlertDescription>
+            </Alert>
+          )}
+
+          {hasCameraPermission === null && !capturedImageDataUrl && (
+            <div className="text-center text-muted-foreground">
+              Solicitando permissão da câmera...
+            </div>
+          )}
+
+          {hasCameraPermission && !capturedImageDataUrl && (
+            <div className="bg-muted rounded-md overflow-hidden border">
+              <video ref={videoRef} autoPlay playsInline muted className="w-full aspect-video object-cover" />
+            </div>
+          )}
+
+          {capturedImageDataUrl && (
+            <div className="bg-muted rounded-md overflow-hidden border">
+              <Image src={capturedImageDataUrl} alt="Foto Capturada" width={600} height={400} className="w-full aspect-video object-cover" data-ai-hint="gravata moda" />
+            </div>
+          )}
+        </div>
+        <AlertDialogFooter>
+          <AlertDialogCancel onClick={() => setIsWebcamDialogOpen(false)}>Fechar</AlertDialogCancel>
+          {hasCameraPermission && !capturedImageDataUrl && (
+            <Button onClick={handleCaptureImage}>
+              <Camera size={16} className="mr-2" /> Capturar Imagem
+            </Button>
+          )}
+          {hasCameraPermission && capturedImageDataUrl && (
+            <>
+              <Button variant="outline" onClick={handleRetakePhoto}>
+                <RefreshCcw size={16} className="mr-2" /> Tirar Outra
+              </Button>
+              <Button onClick={handleUseCapturedImage}>
+                <Check size={16} className="mr-2" /> Usar esta Foto
+              </Button>
+            </>
+          )}
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+
+    {/* Manage Categories Dialog */}
       <AlertDialog open={isManageCategoryDialogOpen} onOpenChange={setIsManageCategoryDialogOpen}>
         <AlertDialogContent className="sm:max-w-md">
             <AlertDialogHeader>
@@ -363,6 +526,7 @@ export function TieForm({
         </AlertDialogContent>
       </AlertDialog>
 
+    {/* Confirm Delete Category Dialog */}
       <AlertDialog open={isConfirmDeleteCategoryOpen} onOpenChange={setIsConfirmDeleteCategoryOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -377,6 +541,7 @@ export function TieForm({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </Form>
+    </>
   );
 }
+
