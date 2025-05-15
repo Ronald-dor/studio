@@ -24,7 +24,9 @@ interface TieFormProps {
   onSubmit: (data: TieFormData) => void;
   initialData?: TieFormData;
   onCancel?: () => void;
-  availableCategories: TieCategory[]; // Changed from formCategories and allCategoriesForManagement
+  // Reverted: Props changed back
+  formCategories: TieCategory[]; 
+  allCategoriesForManagement: TieCategory[];
   onAddCategory: (categoryName: string) => Promise<boolean>;
   onDeleteCategory: (categoryName: TieCategory) => void;
 }
@@ -33,7 +35,9 @@ export function TieForm({
   onSubmit, 
   initialData, 
   onCancel, 
-  availableCategories, 
+  // Reverted: Props changed back
+  formCategories, 
+  allCategoriesForManagement, 
   onAddCategory, 
   onDeleteCategory 
 }: TieFormProps) {
@@ -46,7 +50,6 @@ export function TieForm({
   const [categoryToDelete, setCategoryToDelete] = useState<TieCategory | null>(null);
   const [isConfirmDeleteCategoryOpen, setIsConfirmDeleteCategoryOpen] = useState(false);
 
-  // Webcam states
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [isWebcamDialogOpen, setIsWebcamDialogOpen] = useState(false);
@@ -54,9 +57,10 @@ export function TieForm({
   const [webcamStream, setWebcamStream] = useState<MediaStream | null>(null);
   const [capturedImageDataUrl, setCapturedImageDataUrl] = useState<string | null>(null);
 
-  const selectDropdownCategories = useMemo(() => {
-    return availableCategories.filter(cat => cat.toLowerCase() !== 'todas');
-  }, [availableCategories]);
+  // Reverted: Use formCategories directly for the dropdown
+  const selectDropdownCategories = formCategories; 
+  // Reverted: Use allCategoriesForManagement directly for the management dialog
+  const categoriesForManagementDialog = allCategoriesForManagement;
 
   const form = useForm<TieFormData>({ 
     resolver: zodResolver(TieSchema),
@@ -65,6 +69,7 @@ export function TieForm({
       quantity: initialData?.quantity || 0,
       unitPrice: initialData?.unitPrice || 0,
       valueInQuantity: initialData?.valueInQuantity || 0,
+      // Reverted: Use selectDropdownCategories (which is formCategories)
       category: initialData?.category || (selectDropdownCategories.length > 0 ? selectDropdownCategories[0] : UNCATEGORIZED_LABEL), 
       imageUrl: initialData?.imageUrl || `https://placehold.co/300x400.png`,
       imageFile: null,
@@ -72,12 +77,13 @@ export function TieForm({
   });
 
   useEffect(() => {
-    const defaultCat = selectDropdownCategories.length > 0 ? selectDropdownCategories[0] : UNCATEGORIZED_LABEL;
+    // Reverted: Use formCategories for defaultCat logic
+    const defaultCat = formCategories.length > 0 ? formCategories[0] : UNCATEGORIZED_LABEL;
     if (initialData) {
         form.reset({
             ...initialData,
             valueInQuantity: initialData.valueInQuantity || 0,
-            category: selectDropdownCategories.includes(initialData.category) 
+            category: formCategories.includes(initialData.category) 
                         ? initialData.category 
                         : (initialData.category === UNCATEGORIZED_LABEL ? UNCATEGORIZED_LABEL : defaultCat),
             imageFile: null, 
@@ -95,7 +101,7 @@ export function TieForm({
         });
         setPreviewUrl(null);
     }
-  }, [initialData, form, selectDropdownCategories]);
+  }, [initialData, form, formCategories]); // Reverted: Dependency on formCategories
 
 
   const handleImageChange = (event: ChangeEvent<HTMLInputElement>) => {
@@ -107,7 +113,7 @@ export function TieForm({
         setPreviewUrl(reader.result as string);
       };
       reader.readAsDataURL(file);
-      setCapturedImageDataUrl(null); // Clear any webcam capture
+      setCapturedImageDataUrl(null); 
     } else {
       setImageFile(null);
       if (!capturedImageDataUrl) {
@@ -125,7 +131,8 @@ export function TieForm({
       imageUrl: previewUrl || `https://placehold.co/300x400.png`
     };
     onSubmit(dataToSubmit);
-    const defaultCat = selectDropdownCategories.length > 0 ? selectDropdownCategories[0] : UNCATEGORIZED_LABEL;
+    // Reverted: Use formCategories for defaultCat logic
+    const defaultCat = formCategories.length > 0 ? formCategories[0] : UNCATEGORIZED_LABEL;
     form.reset({
         name: '',
         quantity: 0,
@@ -165,12 +172,11 @@ export function TieForm({
   const executeDeleteCategory = () => {
     if (categoryToDelete) {
       onDeleteCategory(categoryToDelete);
-      // After deleting, availableCategories will update, which updates selectDropdownCategories
-      // The form's category value might need resetting if the current one was deleted.
-      // The `useEffect` for form.reset depending on selectDropdownCategories should handle this adjustment.
       if (form.getValues('category') === categoryToDelete) {
-        const newDefaultCat = availableCategories.filter(cat => cat.toLowerCase() !== 'todas' && cat !== categoryToDelete).length > 0 
-                                ? availableCategories.filter(cat => cat.toLowerCase() !== 'todas' && cat !== categoryToDelete)[0] 
+        // Reverted: Use allCategoriesForManagement for newDefaultCat logic
+        const remainingCats = allCategoriesForManagement.filter(cat => cat !== categoryToDelete);
+        const newDefaultCat = remainingCats.length > 0 
+                                ? remainingCats[0] 
                                 : UNCATEGORIZED_LABEL;
         form.setValue('category', newDefaultCat);
       }
@@ -179,7 +185,6 @@ export function TieForm({
     setIsConfirmDeleteCategoryOpen(false);
   };
 
-  // Webcam Logic
   const startWebcam = async () => {
     if (webcamStream) {
       webcamStream.getTracks().forEach(track => track.stop());
@@ -257,10 +262,6 @@ export function TieForm({
     }
   };
   
-  const categoriesForManagementDialog = useMemo(() => {
-    return availableCategories.filter(cat => cat.toLowerCase() !== 'todas').sort();
-  }, [availableCategories]);
-
   return (
     <>
     <Form {...form}>
@@ -364,6 +365,7 @@ export function TieForm({
                             </SelectTrigger>
                           </FormControl>
                           <SelectContent>
+                            {/* Reverted: Use selectDropdownCategories (which is formCategories) */}
                             {selectDropdownCategories.map((category) => (
                               <SelectItem key={category} value={category}>
                                 {category}
@@ -418,10 +420,8 @@ export function TieForm({
       </form>
     </Form>
 
-    {/* Hidden canvas for capturing webcam frame */}
     <canvas ref={canvasRef} style={{ display: 'none' }} />
 
-    {/* Webcam Dialog */}
     <AlertDialog open={isWebcamDialogOpen} onOpenChange={setIsWebcamDialogOpen}>
       <AlertDialogContent className="sm:max-w-lg">
         <AlertDialogHeader>
@@ -477,7 +477,6 @@ export function TieForm({
       </AlertDialogContent>
     </AlertDialog>
 
-    {/* Manage Categories Dialog */}
       <AlertDialog open={isManageCategoryDialogOpen} onOpenChange={setIsManageCategoryDialogOpen}>
         <AlertDialogContent className="sm:max-w-md">
             <AlertDialogHeader>
@@ -498,6 +497,7 @@ export function TieForm({
                 </div>
                 
                 <Label className="text-sm font-medium">Categorias Existentes:</Label>
+                {/* Reverted: Use categoriesForManagementDialog */}
                 {categoriesForManagementDialog.length > 0 ? (
                   <ScrollArea className="h-40 rounded-md border p-2">
                     <ul className="space-y-1">
@@ -529,7 +529,6 @@ export function TieForm({
         </AlertDialogContent>
       </AlertDialog>
 
-    {/* Confirm Delete Category Dialog */}
       <AlertDialog open={isConfirmDeleteCategoryOpen} onOpenChange={setIsConfirmDeleteCategoryOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -547,4 +546,3 @@ export function TieForm({
     </>
   );
 }
-

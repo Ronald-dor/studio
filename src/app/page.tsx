@@ -80,7 +80,7 @@ export default function HomePage() {
     localStorage.setItem('tieTrackTies', JSON.stringify(ties));
   }, [ties]);
 
-  // Save categories to localStorage whenever they change
+  // Save categories to localStorage whenever they change (centralized)
   useEffect(() => {
     localStorage.setItem('tieTrackCategories', JSON.stringify(categories));
   }, [categories]);
@@ -101,22 +101,17 @@ export default function HomePage() {
       if (!isDefaultUncategorized && otherCategoriesExist) {
         newCategoriesSnapshot = newCategoriesSnapshot.filter(cat => cat !== UNCATEGORIZED_LABEL);
         categoriesStateChanged = true;
-      } else if (!isDefaultUncategorized && !otherCategoriesExist && defaultCategories.length === 0 && newCategoriesSnapshot.length === 1 && newCategoriesSnapshot[0] === UNCATEGORIZED_LABEL) {
-        // If UNCATEGORIZED_LABEL is the only category, no ties use it, it's not a default, and no other default categories exist
-        // This case might lead to an empty categories list if not handled carefully.
-        // For now, the `otherCategoriesExist` condition prevents removing it if it's the last one.
       }
     }
 
     if (categoriesStateChanged) {
-      // Check if the sorted new list is actually different from the current sorted list
       const sortedNewCategories = newCategoriesSnapshot.sort();
       const sortedCurrentCategories = [...categories].sort();
       if (JSON.stringify(sortedNewCategories) !== JSON.stringify(sortedCurrentCategories)) {
         setCategories(sortedNewCategories);
       }
     }
-  }, [ties, categories]); // defaultCategories is stable, not needed in deps
+  }, [ties, categories]);
 
 
   const processImageAndGetUrl = async (imageFile: File | null | undefined, currentImageUrl?: string): Promise<string> => {
@@ -142,7 +137,9 @@ export default function HomePage() {
       toast({ title: "Erro", description: `A categoria "${trimmedName}" já existe.`, variant: "destructive" });
       return false;
     }
-    setCategories(prev => [...prev, trimmedName].sort());
+    const newCategories = [...categories, trimmedName].sort();
+    setCategories(newCategories);
+    // localStorage.setItem('tieTrackCategories', JSON.stringify(newCategories)); // Re-added explicit save
     toast({ title: "Categoria Adicionada", description: `A categoria "${trimmedName}" foi adicionada.` });
     return true;
   }, [categories, toast]);
@@ -177,7 +174,9 @@ export default function HomePage() {
         updatedCategories = updatedCategories.filter(cat => cat !== UNCATEGORIZED_LABEL);
     }
     
-    setCategories(updatedCategories.sort());
+    const finalUpdatedCategories = updatedCategories.sort();
+    setCategories(finalUpdatedCategories);
+    // localStorage.setItem('tieTrackCategories', JSON.stringify(finalUpdatedCategories)); // Re-added explicit save
     
     if (activeTab === categoryToDelete) {
         setActiveTab("Todas");
@@ -211,7 +210,9 @@ export default function HomePage() {
     }
 
     if (!categories.includes(tieCategory)) {
-      setCategories(prev => [...prev, tieCategory].sort());
+      const newCategories = [...categories, tieCategory].sort();
+      setCategories(newCategories);
+      // localStorage.setItem('tieTrackCategories', JSON.stringify(newCategories)); // Re-added explicit save
     }
 
     setEditingTie(undefined);
@@ -246,12 +247,12 @@ export default function HomePage() {
       if (todasIndex !== -1 && !TABS_ORDER.includes(UNCATEGORIZED_LABEL)) {
           TABS_ORDER.splice(todasIndex + 1, 0, UNCATEGORIZED_LABEL);
       } else if (!TABS_ORDER.includes(UNCATEGORIZED_LABEL)) {
-          TABS_ORDER.unshift(UNCATEGORIZED_LABEL); // Fallback if "Todas" isn't there for some reason
+          TABS_ORDER.unshift(UNCATEGORIZED_LABEL); 
       }
   }
-  // Ensure "Todas" is first if present, then "Sem Categoria" if present, then others sorted.
+  
   let finalTabsOrder: string[] = [];
-  if (categories.includes("Todas") || TABS_ORDER.includes("Todas")) finalTabsOrder.push("Todas"); // Should always be true based on TABS_ORDER init
+  if (categories.includes("Todas") || TABS_ORDER.includes("Todas")) finalTabsOrder.push("Todas"); 
   
   const uniqueSortedCategories = Array.from(new Set(categories)).sort();
   
@@ -263,21 +264,21 @@ export default function HomePage() {
       finalTabsOrder.push(cat);
     }
   });
-   // If "Todas" was not in categories for some reason, but is in TABS_ORDER, add it first.
+   
   if (!finalTabsOrder.includes("Todas") && TABS_ORDER.includes("Todas")) {
     finalTabsOrder.unshift("Todas");
   }
-  // If categories is empty, ensure "Todas" and "Sem Categoria" (if relevant via initial ties) are options
+  
    if (finalTabsOrder.length === 0 && (ties.length > 0 || initialTiesData.length > 0)) {
      finalTabsOrder.push("Todas");
      if (ties.some(t => t.category === UNCATEGORIZED_LABEL) || initialTiesData.some(t => t.category === UNCATEGORIZED_LABEL) || categories.includes(UNCATEGORIZED_LABEL)) {
         if(!finalTabsOrder.includes(UNCATEGORIZED_LABEL)) finalTabsOrder.push(UNCATEGORIZED_LABEL);
      }
-   } else if (finalTabsOrder.length === 0) { // Truly empty state
+   } else if (finalTabsOrder.length === 0) { 
       finalTabsOrder.push("Todas");
-      finalTabsOrder.push(UNCATEGORIZED_LABEL); // Default to show it if no categories defined
+      finalTabsOrder.push(UNCATEGORIZED_LABEL); 
    }
-   // Ensure "Todas" is present even if categories are empty, and ensure unique tabs
+   
    const tabsToDisplay = Array.from(new Set(finalTabsOrder));
    if (!tabsToDisplay.includes("Todas")) {
     tabsToDisplay.unshift("Todas");
@@ -344,7 +345,7 @@ export default function HomePage() {
         onOpenChange={setIsDialogOpen}
         onSubmit={handleFormSubmit}
         initialData={editingTie}
-        allCategories={categories} // Pass all categories for management and dropdown
+        allCategories={categories} 
         onAddCategory={handleAddCategory}
         onDeleteCategory={handleDeleteCategory}
       />
@@ -355,5 +356,4 @@ export default function HomePage() {
     </div>
   );
 }
-
     

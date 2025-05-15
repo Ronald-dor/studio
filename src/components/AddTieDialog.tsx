@@ -1,10 +1,11 @@
 
 "use client";
 
-import React from 'react';
+import React, { useMemo } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { TieForm } from './TieForm';
 import type { TieFormData, TieCategory } from '@/lib/types';
+import { UNCATEGORIZED_LABEL } from '@/lib/types';
 
 interface AddTieDialogProps {
   open: boolean;
@@ -12,7 +13,7 @@ interface AddTieDialogProps {
   onSubmit: (data: TieFormData) => void;
   initialData?: TieFormData;
   trigger?: React.ReactNode;
-  allCategories: TieCategory[];
+  allCategories: TieCategory[]; // This prop is kept from the previous state
   onAddCategory: (categoryName: string) => Promise<boolean>;
   onDeleteCategory: (categoryName: TieCategory) => void;
 }
@@ -23,7 +24,7 @@ export function AddTieDialog({
   onSubmit, 
   initialData, 
   trigger, 
-  allCategories, 
+  allCategories, // Prop remains
   onAddCategory,
   onDeleteCategory
 }: AddTieDialogProps) {
@@ -36,6 +37,15 @@ export function AddTieDialog({
     onOpenChange(false);
   }
 
+  // Reverted: Compute formCategories and allCategoriesForManagement for TieForm
+  const formCategoriesForDropdown = useMemo(() => {
+    return allCategories.filter(cat => cat.toLowerCase() !== 'todas');
+  }, [allCategories]);
+
+  const categoriesForManagementDialog = useMemo(() => {
+    return allCategories.filter(cat => cat.toLowerCase() !== 'todas').sort();
+  }, [allCategories]);
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       {trigger && <DialogTrigger asChild>{trigger}</DialogTrigger>}
@@ -47,7 +57,9 @@ export function AddTieDialog({
           onSubmit={internalSubmit} 
           initialData={initialData} 
           onCancel={handleCancel}
-          availableCategories={allCategories} // Pass all categories
+          // Reverted: Pass specific category lists
+          formCategories={formCategoriesForDropdown}
+          allCategoriesForManagement={categoriesForManagementDialog}
           onAddCategory={onAddCategory}
           onDeleteCategory={onDeleteCategory}
         />
@@ -55,4 +67,3 @@ export function AddTieDialog({
     </Dialog>
   );
 }
-
