@@ -28,9 +28,18 @@ export default function HomePage() {
   const [searchTerm, setSearchTerm] = useState('');
   const { toast } = useToast();
   const [activeTab, setActiveTab] = useState<string>("Todas");
+  const [isClient, setIsClient] = useState(false);
+  const [currentYear, setCurrentYear] = useState<number | null>(null);
+
+  useEffect(() => {
+    setIsClient(true);
+    setCurrentYear(new Date().getFullYear());
+  }, []);
 
   // Load ties and categories from localStorage on initial mount
   useEffect(() => {
+    if (!isClient) return;
+
     let activeTies: Tie[] = [];
     const storedTiesData = localStorage.getItem('tieTrackTies');
     if (storedTiesData) {
@@ -73,20 +82,23 @@ export default function HomePage() {
       
       setCategories(Array.from(initialSetupCategoriesSet).sort());
     }
-  }, []);
+  }, [isClient]);
 
   // Save ties to localStorage whenever they change
   useEffect(() => {
+    if (!isClient) return;
     localStorage.setItem('tieTrackTies', JSON.stringify(ties));
-  }, [ties]);
+  }, [ties, isClient]);
 
   // Save categories to localStorage whenever they change (centralized)
   useEffect(() => {
+    if (!isClient) return;
     localStorage.setItem('tieTrackCategories', JSON.stringify(categories));
-  }, [categories]);
+  }, [categories, isClient]);
 
   // Manage UNCATEGORIZED_LABEL based on ties and categories
   useEffect(() => {
+    if (!isClient) return;
     const hasUncategorizedTies = ties.some(tie => tie.category === UNCATEGORIZED_LABEL);
     let categoriesStateChanged = false;
     let newCategoriesSnapshot = [...categories];
@@ -111,7 +123,7 @@ export default function HomePage() {
         setCategories(sortedNewCategories);
       }
     }
-  }, [ties, categories]);
+  }, [ties, categories, isClient]);
 
 
   const processImageAndGetUrl = async (imageFile: File | null | undefined, currentImageUrl?: string): Promise<string> => {
@@ -139,7 +151,7 @@ export default function HomePage() {
     }
     const newCategories = [...categories, trimmedName].sort();
     setCategories(newCategories);
-    // localStorage.setItem('tieTrackCategories', JSON.stringify(newCategories)); // Re-added explicit save
+    // localStorage.setItem('tieTrackCategories', JSON.stringify(newCategories)); 
     toast({ title: "Categoria Adicionada", description: `A categoria "${trimmedName}" foi adicionada.` });
     return true;
   }, [categories, toast]);
@@ -176,7 +188,7 @@ export default function HomePage() {
     
     const finalUpdatedCategories = updatedCategories.sort();
     setCategories(finalUpdatedCategories);
-    // localStorage.setItem('tieTrackCategories', JSON.stringify(finalUpdatedCategories)); // Re-added explicit save
+    // localStorage.setItem('tieTrackCategories', JSON.stringify(finalUpdatedCategories)); 
     
     if (activeTab === categoryToDelete) {
         setActiveTab("Todas");
@@ -212,7 +224,7 @@ export default function HomePage() {
     if (!categories.includes(tieCategory)) {
       const newCategories = [...categories, tieCategory].sort();
       setCategories(newCategories);
-      // localStorage.setItem('tieTrackCategories', JSON.stringify(newCategories)); // Re-added explicit save
+      // localStorage.setItem('tieTrackCategories', JSON.stringify(newCategories)); 
     }
 
     setEditingTie(undefined);
@@ -311,47 +323,60 @@ export default function HomePage() {
         </div>
       </header>
 
-      <main className="container mx-auto p-4 md:p-8">
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-          <TabsList className="flex flex-wrap justify-start gap-2 mb-6 pb-2 border-b border-border">
-            {tabsToDisplay.map((category) => (
-              <div key={category} className="relative group">
-                <TabsTrigger value={category} className="text-sm px-3 py-1.5 h-auto">
-                  {category}
-                </TabsTrigger>
-              </div>
-            ))}
-          </TabsList>
+      {isClient && (
+        <main className="container mx-auto p-4 md:p-8">
+          <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+            <TabsList className="flex flex-wrap justify-start gap-2 mb-6 pb-2 border-b border-border">
+              {tabsToDisplay.map((category) => (
+                <div key={category} className="relative group">
+                  <TabsTrigger value={category} className="text-sm px-3 py-1.5 h-auto">
+                    {category}
+                  </TabsTrigger>
+                </div>
+              ))}
+            </TabsList>
 
-          {tabsToDisplay.map((category) => {
-            const tiesForTab = category.toLowerCase() === "todas"
-              ? filteredTies
-              : filteredTies.filter(tie => tie.category === category);
-            return (
-              <TabsContent key={category} value={category} className="mt-0">
-                <TieList
-                  ties={tiesForTab}
-                  onEdit={handleEditTie}
-                  onDelete={handleDeleteTie}
-                />
-              </TabsContent>
-            );
-          })}
-        </Tabs>
-      </main>
+            {tabsToDisplay.map((category) => {
+              const tiesForTab = category.toLowerCase() === "todas"
+                ? filteredTies
+                : filteredTies.filter(tie => tie.category === category);
+              return (
+                <TabsContent key={category} value={category} className="mt-0">
+                  <TieList
+                    ties={tiesForTab}
+                    onEdit={handleEditTie}
+                    onDelete={handleDeleteTie}
+                  />
+                </TabsContent>
+              );
+            })}
+          </Tabs>
+        </main>
+      )}
+      {!isClient && (
+         <main className="container mx-auto p-4 md:p-8">
+           {/* Placeholder or loading state for main content */}
+           <div className="text-center py-10">
+             <p className="text-xl text-muted-foreground">Carregando dados...</p>
+           </div>
+         </main>
+      )}
 
-      <AddTieDialog
-        open={isDialogOpen}
-        onOpenChange={setIsDialogOpen}
-        onSubmit={handleFormSubmit}
-        initialData={editingTie}
-        allCategories={categories} 
-        onAddCategory={handleAddCategory}
-        onDeleteCategory={handleDeleteCategory}
-      />
+
+      {isClient && (
+        <AddTieDialog
+          open={isDialogOpen}
+          onOpenChange={setIsDialogOpen}
+          onSubmit={handleFormSubmit}
+          initialData={editingTie}
+          allCategories={categories} 
+          onAddCategory={handleAddCategory}
+          onDeleteCategory={handleDeleteCategory}
+        />
+      )}
       
       <footer className="py-6 text-center text-sm text-muted-foreground border-t border-border mt-12">
-        © {new Date().getFullYear()} TieTrack. Mantenha sua coleção organizada.
+        © {currentYear || new Date().getFullYear()} TieTrack. Mantenha sua coleção organizada.
       </footer>
     </div>
   );
