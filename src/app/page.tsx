@@ -2,12 +2,13 @@
 "use client";
 
 import React, { useState, useEffect, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { TieList } from '@/components/TieList';
 import { AddTieDialog } from '@/components/AddTieDialog';
 import type { Tie, TieFormData, TieCategory } from '@/lib/types';
-import { PlusCircle, Shirt, Search } from 'lucide-react';
+import { PlusCircle, Shirt, Search, LogOut } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
@@ -21,6 +22,9 @@ const defaultCategories: TieCategory[] = ['Lisa', 'Listrada', 'Pontilhada'];
 const UNCATEGORIZED_LABEL = 'Sem Categoria';
 
 export default function HomePage() {
+  const router = useRouter();
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
+  
   const [ties, setTies] = useState<Tie[]>([]);
   const [categories, setCategories] = useState<TieCategory[]>([]);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -28,17 +32,25 @@ export default function HomePage() {
   const [searchTerm, setSearchTerm] = useState('');
   const { toast } = useToast();
   const [activeTab, setActiveTab] = useState<string>("Todas");
-  const [isClient, setIsClient] = useState(false);
+  const [isClientLoaded, setIsClientLoaded] = useState(false); // Renamed from isClient for clarity
   const [currentYear, setCurrentYear] = useState<number | null>(null);
 
   useEffect(() => {
-    setIsClient(true);
-    setCurrentYear(new Date().getFullYear());
-  }, []);
+    // This effect checks authentication and runs only on the client
+    const authStatus = localStorage.getItem('tieTrackAuthenticated') === 'true';
+    setIsAuthenticated(authStatus);
+    if (!authStatus) {
+      router.replace('/login');
+    } else {
+      setIsClientLoaded(true); // Set to true only if authenticated
+      setCurrentYear(new Date().getFullYear());
+    }
+  }, [router]);
 
-  // Load ties and categories from localStorage on initial mount
+
+  // Load ties and categories from localStorage on initial mount, only if authenticated and client loaded
   useEffect(() => {
-    if (!isClient) return;
+    if (!isClientLoaded || !isAuthenticated) return;
 
     let activeTies: Tie[] = [];
     const storedTiesData = localStorage.getItem('tieTrackTies');
@@ -82,23 +94,23 @@ export default function HomePage() {
       
       setCategories(Array.from(initialSetupCategoriesSet).sort());
     }
-  }, [isClient]);
+  }, [isClientLoaded, isAuthenticated]);
 
   // Save ties to localStorage whenever they change
   useEffect(() => {
-    if (!isClient) return;
+    if (!isClientLoaded || !isAuthenticated) return;
     localStorage.setItem('tieTrackTies', JSON.stringify(ties));
-  }, [ties, isClient]);
+  }, [ties, isClientLoaded, isAuthenticated]);
 
   // Save categories to localStorage whenever they change (centralized)
   useEffect(() => {
-    if (!isClient) return;
+    if (!isClientLoaded || !isAuthenticated) return;
     localStorage.setItem('tieTrackCategories', JSON.stringify(categories));
-  }, [categories, isClient]);
+  }, [categories, isClientLoaded, isAuthenticated]);
 
   // Manage UNCATEGORIZED_LABEL based on ties and categories
   useEffect(() => {
-    if (!isClient) return;
+    if (!isClientLoaded || !isAuthenticated) return;
     const hasUncategorizedTies = ties.some(tie => tie.category === UNCATEGORIZED_LABEL);
     let categoriesStateChanged = false;
     let newCategoriesSnapshot = [...categories];
@@ -123,7 +135,7 @@ export default function HomePage() {
         setCategories(sortedNewCategories);
       }
     }
-  }, [ties, categories, isClient]);
+  }, [ties, categories, isClientLoaded, isAuthenticated]);
 
 
   const processImageAndGetUrl = async (imageFile: File | null | undefined, currentImageUrl?: string): Promise<string> => {
@@ -150,7 +162,7 @@ export default function HomePage() {
       return false;
     }
     const newCategories = [...categories, trimmedName].sort();
-    setCategories(newCategories);
+    setCategories(newCategories); // This will trigger the useEffect to save to localStorage
     toast({ title: "Categoria Adicionada", description: `A categoria "${trimmedName}" foi adicionada.` });
     return true;
   }, [categories, toast]);
@@ -186,7 +198,7 @@ export default function HomePage() {
     }
     
     const finalUpdatedCategories = updatedCategories.sort();
-    setCategories(finalUpdatedCategories);
+    setCategories(finalUpdatedCategories); // This will trigger the useEffect to save to localStorage
     
     if (activeTab === categoryToDelete) {
         setActiveTab("Todas");
@@ -221,7 +233,7 @@ export default function HomePage() {
 
     if (!categories.includes(tieCategory)) {
       const newCategories = [...categories, tieCategory].sort();
-      setCategories(newCategories);
+      setCategories(newCategories); // This will trigger the useEffect to save to localStorage
     }
 
     setEditingTie(undefined);
@@ -246,51 +258,70 @@ export default function HomePage() {
     setIsDialogOpen(true);
   };
 
+  const handleLogout = () => {
+    localStorage.removeItem('tieTrackAuthenticated');
+    setIsAuthenticated(false);
+    router.replace('/login');
+    toast({ title: 'Logout realizado', description: 'Você saiu da sua conta.' });
+  };
+
+  if (isAuthenticated === null) {
+    return (
+      <div className="flex flex-col justify-center items-center min-h-screen bg-background p-4">
+        <Shirt size={64} className="text-primary mb-6" />
+        <p className="text-muted-foreground">Verificando autenticação...</p>
+        {/* You can add a spinner here if you like */}
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) {
+    // This case should ideally be handled by the redirect, but as a fallback:
+     return (
+      <div className="flex flex-col justify-center items-center min-h-screen bg-background p-4">
+        <Shirt size={64} className="text-primary mb-6" />
+        <p className="text-muted-foreground">Redirecionando para o login...</p>
+      </div>
+    );
+  }
+
+
   const filteredTies = ties.filter(tie =>
     tie.name.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  const TABS_ORDER: string[] = ["Todas", ...categories.filter(c => c.toLowerCase() !== 'todas' && c !== UNCATEGORIZED_LABEL).sort()];
-  if (categories.includes(UNCATEGORIZED_LABEL)) {
-      const todasIndex = TABS_ORDER.indexOf("Todas");
-      if (todasIndex !== -1 && !TABS_ORDER.includes(UNCATEGORIZED_LABEL)) {
-          TABS_ORDER.splice(todasIndex + 1, 0, UNCATEGORIZED_LABEL);
-      } else if (!TABS_ORDER.includes(UNCATEGORIZED_LABEL)) {
-          TABS_ORDER.unshift(UNCATEGORIZED_LABEL); 
-      }
-  }
-  
-  let finalTabsOrder: string[] = [];
-  if (categories.includes("Todas") || TABS_ORDER.includes("Todas")) finalTabsOrder.push("Todas"); 
-  
-  const uniqueSortedCategories = Array.from(new Set(categories)).sort();
-  
-  if (uniqueSortedCategories.includes(UNCATEGORIZED_LABEL) && UNCATEGORIZED_LABEL !== "Todas") {
-    finalTabsOrder.push(UNCATEGORIZED_LABEL);
-  }
-  uniqueSortedCategories.forEach(cat => {
-    if (cat !== "Todas" && cat !== UNCATEGORIZED_LABEL && !finalTabsOrder.includes(cat)) {
-      finalTabsOrder.push(cat);
-    }
-  });
-   
-  if (!finalTabsOrder.includes("Todas") && TABS_ORDER.includes("Todas")) {
-    finalTabsOrder.unshift("Todas");
-  }
-  
-   if (finalTabsOrder.length === 0 && (ties.length > 0 || initialTiesData.length > 0)) {
-     finalTabsOrder.push("Todas");
-     if (ties.some(t => t.category === UNCATEGORIZED_LABEL) || initialTiesData.some(t => t.category === UNCATEGORIZED_LABEL) || categories.includes(UNCATEGORIZED_LABEL)) {
-        if(!finalTabsOrder.includes(UNCATEGORIZED_LABEL)) finalTabsOrder.push(UNCATEGORIZED_LABEL);
-     }
-   } else if (finalTabsOrder.length === 0) { 
-      finalTabsOrder.push("Todas");
-      finalTabsOrder.push(UNCATEGORIZED_LABEL); 
+   // Tab ordering logic - simplified as categories will be loaded/sorted already
+   let tabsToDisplay = ["Todas"];
+   const uniqueSortedCategories = Array.from(new Set(categories)).sort();
+ 
+   if (uniqueSortedCategories.includes(UNCATEGORIZED_LABEL) && UNCATEGORIZED_LABEL !== "Todas") {
+     tabsToDisplay.push(UNCATEGORIZED_LABEL);
    }
-   
-   const tabsToDisplay = Array.from(new Set(finalTabsOrder));
-   if (!tabsToDisplay.includes("Todas")) {
-    tabsToDisplay.unshift("Todas");
+   uniqueSortedCategories.forEach(cat => {
+     if (cat !== "Todas" && cat !== UNCATEGORIZED_LABEL && !tabsToDisplay.includes(cat)) {
+       tabsToDisplay.push(cat);
+     }
+   });
+    
+   // Ensure "Todas" is first if not already
+   if (tabsToDisplay[0] !== "Todas" && tabsToDisplay.includes("Todas")) {
+     tabsToDisplay = ["Todas", ...tabsToDisplay.filter(t => t !== "Todas")];
+   } else if (!tabsToDisplay.includes("Todas")) {
+     tabsToDisplay.unshift("Todas");
+   }
+ 
+   // If no categories exist other than potentially "Todas" or "UNCATEGORIZED_LABEL"
+   if (tabsToDisplay.length === 1 && tabsToDisplay[0] === "Todas") {
+       if (categories.includes(UNCATEGORIZED_LABEL) && !tabsToDisplay.includes(UNCATEGORIZED_LABEL)) {
+           tabsToDisplay.push(UNCATEGORIZED_LABEL);
+       } else if (categories.length === 0 && !defaultCategories.includes(UNCATEGORIZED_LABEL)) {
+           // If truly no categories and "Uncategorized" is not a default, show it.
+           // This covers an edge case of empty local storage.
+           if(!tabsToDisplay.includes(UNCATEGORIZED_LABEL)) tabsToDisplay.push(UNCATEGORIZED_LABEL);
+       }
+   }
+   if (categories.length === 0 && !tabsToDisplay.includes(UNCATEGORIZED_LABEL)) {
+    tabsToDisplay.push(UNCATEGORIZED_LABEL);
    }
 
 
@@ -316,11 +347,14 @@ export default function HomePage() {
             <Button onClick={openAddDialog} variant="default" className="w-full sm:w-auto">
               <PlusCircle size={20} className="mr-2" /> Adicionar Nova Gravata
             </Button>
+            <Button onClick={handleLogout} variant="outline" size="icon" aria-label="Sair">
+              <LogOut size={20} />
+            </Button>
           </div>
         </div>
       </header>
 
-      {isClient && (
+      {isClientLoaded && ( // Only render main content if client has loaded and user is authenticated
         <main className="container mx-auto p-4 md:p-8">
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
             <TabsList className="flex flex-wrap justify-start gap-2 mb-6 pb-2 border-b border-border">
@@ -350,9 +384,8 @@ export default function HomePage() {
           </Tabs>
         </main>
       )}
-      {!isClient && (
+      {!isClientLoaded && isAuthenticated && ( // Show loading for main content if authenticated but client not fully ready for it
          <main className="container mx-auto p-4 md:p-8">
-           {/* Placeholder or loading state for main content */}
            <div className="text-center py-10">
              <p className="text-xl text-muted-foreground">Carregando dados...</p>
            </div>
@@ -360,7 +393,7 @@ export default function HomePage() {
       )}
 
 
-      {isClient && (
+      {isClientLoaded && isAuthenticated && ( // Only render dialog if client is loaded and authenticated
         <AddTieDialog
           open={isDialogOpen}
           onOpenChange={setIsDialogOpen}
@@ -378,6 +411,3 @@ export default function HomePage() {
     </div>
   );
 }
-    
-
-    
