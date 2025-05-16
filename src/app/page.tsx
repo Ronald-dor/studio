@@ -151,7 +151,6 @@ export default function HomePage() {
     }
     const newCategories = [...categories, trimmedName].sort();
     setCategories(newCategories);
-    // localStorage.setItem('tieTrackCategories', JSON.stringify(newCategories)); 
     toast({ title: "Categoria Adicionada", description: `A categoria "${trimmedName}" foi adicionada.` });
     return true;
   }, [categories, toast]);
@@ -188,7 +187,6 @@ export default function HomePage() {
     
     const finalUpdatedCategories = updatedCategories.sort();
     setCategories(finalUpdatedCategories);
-    // localStorage.setItem('tieTrackCategories', JSON.stringify(finalUpdatedCategories)); 
     
     if (activeTab === categoryToDelete) {
         setActiveTab("Todas");
@@ -224,7 +222,6 @@ export default function HomePage() {
     if (!categories.includes(tieCategory)) {
       const newCategories = [...categories, tieCategory].sort();
       setCategories(newCategories);
-      // localStorage.setItem('tieTrackCategories', JSON.stringify(newCategories)); 
     }
 
     setEditingTie(undefined);
@@ -381,4 +378,6 @@ export default function HomePage() {
     </div>
   );
 }
+    
+
     
