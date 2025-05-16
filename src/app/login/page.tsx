@@ -78,7 +78,7 @@ const LoginPage = () => {
                 <Input
                   id="username"
                   type="text"
-                  placeholder="Rsgravataria"
+                  placeholder="Nome de Usuário"
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
                   required
@@ -93,7 +93,7 @@ const LoginPage = () => {
                 <Input
                   id="password"
                   type="password"
-                  placeholder="Confioemvoce"
+                  placeholder="Senha"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   required
