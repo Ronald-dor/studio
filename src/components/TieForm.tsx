@@ -15,7 +15,7 @@ import type { TieFormData, TieCategory } from '@/lib/types';
 import { TieSchema, UNCATEGORIZED_LABEL } from '@/lib/types';
 import { Card, CardContent } from '@/components/ui/card';
 import { ScrollArea } from './ui/scroll-area';
-import { ImageUp, Plus, Trash2, Coins, Camera, Check, RefreshCcw, VideoOff } from 'lucide-react';
+import { ImageUp, Plus, Trash2, Coins, Camera, Check, RefreshCcw, VideoOff, RefreshCw } from 'lucide-react';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 import { useToast } from '@/hooks/use-toast';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -54,6 +54,11 @@ export function TieForm({
   const [hasCameraPermission, setHasCameraPermission] = useState<boolean | null>(null);
   const [webcamStream, setWebcamStream] = useState<MediaStream | null>(null);
   const [capturedImageDataUrl, setCapturedImageDataUrl] = useState<string | null>(null);
+
+  const [videoDevices, setVideoDevices] = useState<MediaDeviceInfo[]>([]);
+  const [currentVideoDeviceIndex, setCurrentVideoDeviceIndex] = useState<number>(0);
+  const [isSwitchingCamera, setIsSwitchingCamera] = useState<boolean>(false);
+
 
   const selectDropdownCategories = formCategories; 
   const categoriesForManagementDialog = allCategoriesForManagement;
@@ -165,34 +170,12 @@ export function TieForm({
         const remainingCats = allCategoriesForManagement.filter(cat => cat !== categoryToDelete);
         const newDefaultCat = remainingCats.length > 0 
                                 ? remainingCats[0] 
-                                : UNCATEGORIZED_LABEL; // Fallback to UNCATEGORIZED_LABEL if all deletable cats are gone
+                                : UNCATEGORIZED_LABEL;
         form.setValue('category', newDefaultCat);
       }
       setCategoryToDelete(null);
     }
     setIsConfirmDeleteCategoryOpen(false);
-  };
-
-  const startWebcam = async () => {
-    if (webcamStream) {
-      webcamStream.getTracks().forEach(track => track.stop());
-    }
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-      setWebcamStream(stream);
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-      }
-      setHasCameraPermission(true);
-    } catch (error) {
-      console.error('Error accessing camera:', error);
-      setHasCameraPermission(false);
-      toast({
-        variant: 'destructive',
-        title: 'Acesso à câmera negado',
-        description: 'Por favor, habilite a permissão da câmera nas configurações do seu navegador.',
-      });
-    }
   };
 
   const stopWebcam = () => {
@@ -202,21 +185,154 @@ export function TieForm({
     }
   };
 
-  useEffect(() => {
-    if (isWebcamDialogOpen && !capturedImageDataUrl) {
-      startWebcam();
-    } else if (!isWebcamDialogOpen || capturedImageDataUrl) {
-      stopWebcam();
-    }
-    return () => {
-      stopWebcam(); 
-    };
-  }, [isWebcamDialogOpen, capturedImageDataUrl]);
-
-  const handleOpenWebcamDialog = () => {
+  const handleOpenWebcamDialog = async () => {
     setCapturedImageDataUrl(null);
-    setHasCameraPermission(null); 
-    setIsWebcamDialogOpen(true);
+    setHasCameraPermission(null);
+    setIsSwitchingCamera(true);
+    setVideoDevices([]); // Clear previous device list
+
+    try {
+      // Request permission first. This helps ensure labels are available for enumerateDevices.
+      const tempStream = await navigator.mediaDevices.getUserMedia({ video: true });
+      tempStream.getTracks().forEach(track => track.stop()); // We don't need this stream, just the permission.
+
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const availableVideoDevices = devices.filter(d => d.kind === 'videoinput');
+
+      if (availableVideoDevices.length > 0) {
+        setVideoDevices(availableVideoDevices);
+        // Prefer user-facing (front) camera as default
+        const userFacingIndex = availableVideoDevices.findIndex(
+            d => d.label.toLowerCase().includes('front') || 
+                 d.label.toLowerCase().includes('frontal') ||
+                 d.label.toLowerCase().includes('face') || // common labels
+                 d.label.toLowerCase().includes('webcam')
+        );
+        setCurrentVideoDeviceIndex(userFacingIndex !== -1 ? userFacingIndex : 0);
+        // hasCameraPermission will be set to true by the useEffect when stream starts
+      } else {
+        toast({ variant: "destructive", title: "Nenhuma câmera encontrada", description: "Nenhum dispositivo de vídeo foi detectado." });
+        setHasCameraPermission(false);
+      }
+    } catch (error: any) {
+      console.error("Error initializing camera devices:", error);
+      setHasCameraPermission(false);
+       if (error.name === "NotAllowedError" || error.name === "PermissionDeniedError") {
+             toast({
+                variant: 'destructive',
+                title: 'Acesso à câmera negado',
+                description: 'Por favor, habilite a permissão da câmera nas configurações do seu navegador.',
+             });
+        } else {
+             toast({
+                variant: 'destructive',
+                title: 'Erro ao Inicializar Câmera',
+                description: 'Não foi possível listar os dispositivos de câmera.',
+             });
+        }
+    } finally {
+      setIsSwitchingCamera(false);
+      setIsWebcamDialogOpen(true); // Open dialog, useEffect will attempt to start stream
+    }
+  };
+
+  useEffect(() => {
+    const manageWebcamStream = async () => {
+      if (!isWebcamDialogOpen || capturedImageDataUrl) {
+        if (webcamStream) {
+          stopWebcam();
+        }
+        return;
+      }
+
+      if (webcamStream) { // Stop previous stream before starting/switching
+        stopWebcam();
+      }
+      setIsSwitchingCamera(true);
+
+      try {
+        let devicesToUse = videoDevices;
+        if (devicesToUse.length === 0 && hasCameraPermission !== false) {
+          // Attempt to enumerate if not done (e.g., direct dialog open without pre-enumeration)
+          // This path is less likely if handleOpenWebcamDialog runs first.
+          const tempStreamForPerm = await navigator.mediaDevices.getUserMedia({ video: true });
+          tempStreamForPerm.getTracks().forEach(track => track.stop());
+          const enumeratedDevices = await navigator.mediaDevices.enumerateDevices();
+          const availableVideoDevices = enumeratedDevices.filter(d => d.kind === 'videoinput');
+          if (availableVideoDevices.length === 0) {
+            toast({ variant: "destructive", title: "Nenhuma câmera encontrada" });
+            setHasCameraPermission(false); setIsSwitchingCamera(false); return;
+          }
+          setVideoDevices(availableVideoDevices);
+          devicesToUse = availableVideoDevices;
+           // Reset index if it was out of bounds for a previously empty list
+          if (currentVideoDeviceIndex >= availableVideoDevices.length && availableVideoDevices.length > 0) {
+            setCurrentVideoDeviceIndex(0);
+          }
+        }
+        
+        if (devicesToUse.length === 0) {
+             toast({ variant: "destructive", title: "Câmeras não carregadas"});
+             setHasCameraPermission(false); setIsSwitchingCamera(false); return;
+        }
+
+        const deviceIdToUse = devicesToUse[currentVideoDeviceIndex]?.deviceId;
+
+        if (!deviceIdToUse) {
+            console.warn("Target deviceId not found. Current index:", currentVideoDeviceIndex, "Devices:", devicesToUse);
+            if (devicesToUse.length > 0) {
+                setCurrentVideoDeviceIndex(0); // Attempt to fallback to the first device
+                setIsSwitchingCamera(false); // Allow effect to re-run
+                return; 
+            } else {
+                toast({ variant: "destructive", title: "Nenhuma câmera disponível"});
+                setHasCameraPermission(false); setIsSwitchingCamera(false); return;
+            }
+        }
+        
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { deviceId: { exact: deviceIdToUse } }
+        });
+        setHasCameraPermission(true);
+        setWebcamStream(stream);
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+        }
+
+      } catch (error: any) {
+        console.error('Error accessing camera:', error);
+        setHasCameraPermission(false);
+        const errName = error.name || '';
+        const errMessage = error.message || 'Erro desconhecido.';
+        if (errName === "NotAllowedError" || errName === "PermissionDeniedError") {
+             toast({ variant: 'destructive', title: 'Acesso à câmera negado', description: 'Habilite a permissão da câmera no seu navegador.'});
+        } else if (errName === "NotFoundError" || errName === "DevicesNotFoundError" || errName === "OverconstrainedError"){
+             toast({ variant: 'destructive', title: 'Câmera não encontrada', description: 'A câmera selecionada não foi encontrada ou não suporta as restrições. Tente outra.'});
+        } else {
+             toast({ variant: 'destructive', title: 'Erro na Câmera', description: `Erro: ${errMessage}` });
+        }
+      } finally {
+        setIsSwitchingCamera(false);
+      }
+    };
+
+    manageWebcamStream();
+
+    return () => { // Cleanup function
+      if (webcamStream) {
+        stopWebcam();
+      }
+    };
+  }, [isWebcamDialogOpen, capturedImageDataUrl, currentVideoDeviceIndex]); 
+  // videoDevices is intentionally not a direct dependency to avoid re-running enumeration loop, 
+  // it's managed inside or by handleOpenWebcamDialog.
+
+  const handleSwitchCamera = () => {
+    if (videoDevices.length > 1 && !isSwitchingCamera) {
+      setCapturedImageDataUrl(null); // Clear any captured image
+      const nextIndex = (currentVideoDeviceIndex + 1) % videoDevices.length;
+      setCurrentVideoDeviceIndex(nextIndex); // This will trigger the useEffect
+    }
   };
 
   const handleCaptureImage = () => {
@@ -230,6 +346,7 @@ export function TieForm({
         context.drawImage(video, 0, 0, canvas.width, canvas.height);
         const dataUrl = canvas.toDataURL('image/webp'); 
         setCapturedImageDataUrl(dataUrl);
+        // stopWebcam(); // Stop stream after capture
       }
     } else {
       toast({ variant: "destructive", title: "Erro ao capturar", description: "Não foi possível acessar a stream de vídeo."});
@@ -238,6 +355,7 @@ export function TieForm({
 
   const handleRetakePhoto = () => {
     setCapturedImageDataUrl(null); 
+    // The useEffect will restart the stream for the currentVideoDeviceIndex
   };
 
   const handleUseCapturedImage = () => {
@@ -246,7 +364,7 @@ export function TieForm({
       setImageFile(null); 
       form.setValue('imageUrl', capturedImageDataUrl);
       form.setValue('imageFile', null);
-      setIsWebcamDialogOpen(false);
+      setIsWebcamDialogOpen(false); // This will also trigger cleanup in useEffect
     }
   };
   
@@ -418,48 +536,57 @@ export function TieForm({
           {hasCameraPermission === false && (
             <Alert variant="destructive">
               <VideoOff className="h-4 w-4" />
-              <AlertTitle>Acesso à Câmera Negado</AlertTitle>
+              <AlertTitle>Acesso à Câmera Negado ou Erro</AlertTitle>
               <AlertDescription>
-                Para tirar uma foto, por favor, permita o acesso à câmera nas configurações do seu navegador e tente novamente.
+                Verifique as permissões da câmera no seu navegador ou tente selecionar outra câmera se disponível.
               </AlertDescription>
             </Alert>
           )}
 
-          {hasCameraPermission === null && !capturedImageDataUrl && (
+          {(hasCameraPermission === null || isSwitchingCamera) && !capturedImageDataUrl && (
             <div className="text-center text-muted-foreground">
-              Solicitando permissão da câmera...
+              {isSwitchingCamera ? "Trocando câmera..." : "Solicitando permissão da câmera..."}
             </div>
           )}
+          
+          {/* Video display area */}
+          <div className={`bg-muted rounded-md overflow-hidden border ${hasCameraPermission && !capturedImageDataUrl ? 'block' : 'hidden'}`}>
+            <video ref={videoRef} autoPlay playsInline muted className="w-full aspect-video object-cover" />
+          </div>
 
-          {hasCameraPermission && !capturedImageDataUrl && (
-            <div className="bg-muted rounded-md overflow-hidden border">
-              <video ref={videoRef} autoPlay playsInline muted className="w-full aspect-video object-cover" />
-            </div>
-          )}
-
+          {/* Captured image display area */}
           {capturedImageDataUrl && (
             <div className="bg-muted rounded-md overflow-hidden border">
               <Image src={capturedImageDataUrl} alt="Foto Capturada" width={600} height={400} className="w-full aspect-video object-cover" data-ai-hint="gravata moda"/>
             </div>
           )}
         </div>
-        <AlertDialogFooter>
-          <AlertDialogCancel onClick={() => setIsWebcamDialogOpen(false)}>Fechar</AlertDialogCancel>
-          {hasCameraPermission && !capturedImageDataUrl && (
-            <Button onClick={handleCaptureImage}>
-              <Camera size={16} className="mr-2" /> Capturar Imagem
-            </Button>
-          )}
-          {hasCameraPermission && capturedImageDataUrl && (
-            <>
-              <Button variant="outline" onClick={handleRetakePhoto}>
-                <RefreshCcw size={16} className="mr-2" /> Tirar Outra
-              </Button>
-              <Button onClick={handleUseCapturedImage}>
-                <Check size={16} className="mr-2" /> Usar esta Foto
-              </Button>
-            </>
-          )}
+        <AlertDialogFooter className="flex-col sm:flex-row gap-2">
+            <div className="flex-grow flex gap-2">
+                {hasCameraPermission && !capturedImageDataUrl && videoDevices.length > 1 && (
+                    <Button variant="outline" onClick={handleSwitchCamera} disabled={isSwitchingCamera} className="w-full sm:w-auto">
+                        <RefreshCw size={16} className="mr-2" /> {isSwitchingCamera ? "Trocando..." : "Trocar Câmera"}
+                    </Button>
+                )}
+            </div>
+            <div className="flex gap-2 flex-col sm:flex-row">
+                <AlertDialogCancel onClick={() => setIsWebcamDialogOpen(false)} className="w-full sm:w-auto">Fechar</AlertDialogCancel>
+                {hasCameraPermission && !capturedImageDataUrl && (
+                    <Button onClick={handleCaptureImage} disabled={isSwitchingCamera} className="w-full sm:w-auto">
+                    <Camera size={16} className="mr-2" /> Capturar Imagem
+                    </Button>
+                )}
+                {hasCameraPermission && capturedImageDataUrl && (
+                    <>
+                    <Button variant="outline" onClick={handleRetakePhoto} className="w-full sm:w-auto">
+                        <RefreshCcw size={16} className="mr-2" /> Tirar Outra
+                    </Button>
+                    <Button onClick={handleUseCapturedImage} className="w-full sm:w-auto">
+                        <Check size={16} className="mr-2" /> Usar esta Foto
+                    </Button>
+                    </>
+                )}
+            </div>
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
@@ -532,3 +659,4 @@ export function TieForm({
     </>
   );
 }
+
