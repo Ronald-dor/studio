@@ -8,40 +8,40 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
-import { Shirt, User, Lock } from 'lucide-react'; // Import User and Lock icons
+import { Shirt, User, Lock } from 'lucide-react';
 
 const LoginPage = () => {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const router = useRouter();
   const { toast } = useToast();
-  const [isClient, setIsClient] = useState(false);
+  const [authStatus, setAuthStatus] = useState<boolean | null>(null); // null: checking, true: authenticated, false: not authenticated
   const [currentYear, setCurrentYear] = useState<number | null>(null);
 
   useEffect(() => {
-    setIsClient(true);
+    // This effect runs once on the client to determine initial auth state
+    const isAuthenticated = localStorage.getItem('tieTrackAuthenticated') === 'true';
+    setAuthStatus(isAuthenticated);
     setCurrentYear(new Date().getFullYear());
   }, []);
 
   useEffect(() => {
-    if (isClient) {
-      const isAuthenticated = localStorage.getItem('tieTrackAuthenticated') === 'true';
-      if (isAuthenticated) {
-        router.replace('/');
-      }
+    // This effect handles redirection if authenticated
+    if (authStatus === true) {
+      router.replace('/');
     }
-  }, [isClient, router]);
+  }, [authStatus, router]);
 
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
-    // Credenciais hardcoded
     if (username === 'Rsgravataria' && password === 'Confioemvoce') {
       localStorage.setItem('tieTrackAuthenticated', 'true');
+      setAuthStatus(true); // Update authStatus to trigger redirect effect
       toast({
         title: 'Login bem-sucedido!',
         description: 'Bem-vindo de volta!',
       });
-      router.push('/');
+      // router.push('/') will be handled by the useEffect watching authStatus
     } else {
       toast({
         variant: 'destructive',
@@ -51,8 +51,18 @@ const LoginPage = () => {
     }
   };
 
-  if (isClient && localStorage.getItem('tieTrackAuthenticated') === 'true') {
-    // Still show a loading/redirecting state while router.replace in useEffect is processing
+  if (authStatus === null) {
+    // Initial state, checking authentication
+    return (
+      <div className="flex flex-col justify-center items-center min-h-screen bg-background p-4">
+        <Shirt size={64} className="text-primary mb-6" />
+        <p className="text-muted-foreground">Verificando autenticação...</p>
+      </div>
+    );
+  }
+
+  if (authStatus === true) {
+    // Authenticated, useEffect will redirect
     return (
       <div className="flex flex-col justify-center items-center min-h-screen bg-background p-4">
         <Shirt size={64} className="text-primary mb-6" />
@@ -61,6 +71,7 @@ const LoginPage = () => {
     );
   }
 
+  // authStatus === false, render login form
   return (
     <div className="flex flex-col justify-center items-center min-h-screen bg-gradient-to-br from-background to-secondary/20 p-4">
       <Card className="w-full max-w-sm shadow-2xl">

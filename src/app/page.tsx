@@ -24,7 +24,8 @@ const UNCATEGORIZED_LABEL = 'Sem Categoria';
 export default function HomePage() {
   const router = useRouter();
   const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
-  
+  const [isClientLoaded, setIsClientLoaded] = useState(false); // Tracks if client-side logic has run
+
   const [ties, setTies] = useState<Tie[]>([]);
   const [categories, setCategories] = useState<TieCategory[]>([]);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -32,25 +33,24 @@ export default function HomePage() {
   const [searchTerm, setSearchTerm] = useState('');
   const { toast } = useToast();
   const [activeTab, setActiveTab] = useState<string>("Todas");
-  const [isClientLoaded, setIsClientLoaded] = useState(false);
   const [currentYear, setCurrentYear] = useState<number | null>(null);
 
   useEffect(() => {
-    // This effect checks authentication and runs only on the client
-    const authStatus = localStorage.getItem('tieTrackAuthenticated') === 'true';
-    setIsAuthenticated(authStatus);
-    if (!authStatus) {
+    // This effect runs once on the client to determine auth status and client readiness
+    const auth = localStorage.getItem('tieTrackAuthenticated') === 'true';
+    setIsAuthenticated(auth);
+    setIsClientLoaded(true); // Indicate client environment is active and initial hydration should be complete
+    setCurrentYear(new Date().getFullYear()); // Safe to set here as it's client-side
+
+    if (!auth) {
       router.replace('/login');
-    } else {
-      setIsClientLoaded(true);
-      setCurrentYear(new Date().getFullYear());
     }
   }, [router]);
 
 
   // Load ties and categories from localStorage on initial mount, only if authenticated and client loaded
   useEffect(() => {
-    if (!isClientLoaded || !isAuthenticated) return;
+    if (!isClientLoaded || isAuthenticated !== true) return; // Ensure client loaded AND authenticated
 
     let activeTies: Tie[] = [];
     const storedTiesData = localStorage.getItem('tieTrackTies');
@@ -98,19 +98,19 @@ export default function HomePage() {
 
   // Save ties to localStorage whenever they change
   useEffect(() => {
-    if (!isClientLoaded || !isAuthenticated) return;
+    if (!isClientLoaded || isAuthenticated !== true) return;
     localStorage.setItem('tieTrackTies', JSON.stringify(ties));
   }, [ties, isClientLoaded, isAuthenticated]);
 
   // Save categories to localStorage whenever they change (centralized)
   useEffect(() => {
-    if (!isClientLoaded || !isAuthenticated) return;
+    if (!isClientLoaded || isAuthenticated !== true) return;
     localStorage.setItem('tieTrackCategories', JSON.stringify(categories));
   }, [categories, isClientLoaded, isAuthenticated]);
 
   // Manage UNCATEGORIZED_LABEL based on ties and categories
   useEffect(() => {
-    if (!isClientLoaded || !isAuthenticated) return;
+    if (!isClientLoaded || isAuthenticated !== true) return;
     const hasUncategorizedTies = ties.some(tie => tie.category === UNCATEGORIZED_LABEL);
     let categoriesStateChanged = false;
     let newCategoriesSnapshot = [...categories];
@@ -261,21 +261,24 @@ export default function HomePage() {
   const handleLogout = () => {
     localStorage.removeItem('tieTrackAuthenticated');
     setIsAuthenticated(false);
-    router.replace('/login');
+    // router.replace('/login'); // The main useEffect will handle this redirection
     toast({ title: 'Logout realizado', description: 'Você saiu da sua conta.' });
   };
 
-  if (isAuthenticated === null) {
+  if (!isClientLoaded || isAuthenticated === null) {
+    // Initial loading state, consistent for server and first client render
     return (
       <div className="flex flex-col justify-center items-center min-h-screen bg-background p-4">
         <Shirt size={64} className="text-primary mb-6" />
-        <p className="text-muted-foreground">Verificando autenticação...</p>
+        <p className="text-muted-foreground">Carregando aplicação...</p>
       </div>
     );
   }
 
-  if (!isAuthenticated) {
-     return (
+  if (isAuthenticated === false) {
+     // Client is loaded, but user is not authenticated.
+     // The useEffect has already initiated a redirect.
+    return (
       <div className="flex flex-col justify-center items-center min-h-screen bg-background p-4">
         <Shirt size={64} className="text-primary mb-6" />
         <p className="text-muted-foreground">Redirecionando para o login...</p>
@@ -283,7 +286,7 @@ export default function HomePage() {
     );
   }
 
-
+  // If isClientLoaded is true AND isAuthenticated is true, render the app content.
   const filteredTies = ties.filter(tie =>
     tie.name.toLowerCase().includes(searchTerm.toLowerCase())
   );
@@ -347,56 +350,44 @@ export default function HomePage() {
         </div>
       </header>
 
-      {isClientLoaded && ( 
-        <main className="container mx-auto p-4 md:p-8">
-          <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-            <TabsList className="flex flex-wrap justify-start gap-2 mb-6 pb-2 border-b border-border">
-              {tabsToDisplay.map((category) => (
-                <div key={category} className="relative group">
-                  <TabsTrigger value={category} className="text-sm px-3 py-1.5 h-auto">
-                    {category}
-                  </TabsTrigger>
-                </div>
-              ))}
-            </TabsList>
+      <main className="container mx-auto p-4 md:p-8">
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+          <TabsList className="flex flex-wrap justify-start gap-2 mb-6 pb-2 border-b border-border">
+            {tabsToDisplay.map((category) => (
+              <div key={category} className="relative group">
+                <TabsTrigger value={category} className="text-sm px-3 py-1.5 h-auto">
+                  {category}
+                </TabsTrigger>
+              </div>
+            ))}
+          </TabsList>
 
-            {tabsToDisplay.map((category) => {
-              const tiesForTab = category.toLowerCase() === "todas"
-                ? filteredTies
-                : filteredTies.filter(tie => tie.category === category);
-              return (
-                <TabsContent key={category} value={category} className="mt-0">
-                  <TieList
-                    ties={tiesForTab}
-                    onEdit={handleEditTie}
-                    onDelete={handleDeleteTie}
-                  />
-                </TabsContent>
-              );
-            })}
-          </Tabs>
-        </main>
-      )}
-      {!isClientLoaded && isAuthenticated && ( 
-         <main className="container mx-auto p-4 md:p-8">
-           <div className="text-center py-10">
-             <p className="text-xl text-muted-foreground">Carregando dados...</p>
-           </div>
-         </main>
-      )}
-
-
-      {isClientLoaded && isAuthenticated && ( 
-        <AddTieDialog
-          open={isDialogOpen}
-          onOpenChange={setIsDialogOpen}
-          onSubmit={handleFormSubmit}
-          initialData={editingTie}
-          allCategories={categories} 
-          onAddCategory={handleAddCategory}
-          onDeleteCategory={handleDeleteCategory}
-        />
-      )}
+          {tabsToDisplay.map((category) => {
+            const tiesForTab = category.toLowerCase() === "todas"
+              ? filteredTies
+              : filteredTies.filter(tie => tie.category === category);
+            return (
+              <TabsContent key={category} value={category} className="mt-0">
+                <TieList
+                  ties={tiesForTab}
+                  onEdit={handleEditTie}
+                  onDelete={handleDeleteTie}
+                />
+              </TabsContent>
+            );
+          })}
+        </Tabs>
+      </main>
+      
+      <AddTieDialog
+        open={isDialogOpen}
+        onOpenChange={setIsDialogOpen}
+        onSubmit={handleFormSubmit}
+        initialData={editingTie}
+        allCategories={categories} 
+        onAddCategory={handleAddCategory}
+        onDeleteCategory={handleDeleteCategory}
+      />
       
       <footer className="py-6 text-center text-sm text-muted-foreground border-t border-border mt-12">
         © {currentYear || new Date().getFullYear()} TieTrack. Mantenha sua coleção organizada.
