@@ -21,12 +21,11 @@ const initialTiesData: Omit<Tie, 'id'>[] = [
 
 const defaultCategories: TieCategory[] = ['Lisa', 'Listrada', 'Pontilhada'];
 
-
 export default function HomePage() {
   const router = useRouter();
+  const [isClientLoaded, setIsClientLoaded] = useState(false);
   const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
-  const [isClientLoaded, setIsClientLoaded] = useState(false); 
-
+  
   const [ties, setTies] = useState<Tie[]>([]);
   const [categories, setCategories] = useState<TieCategory[]>([]);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -37,6 +36,7 @@ export default function HomePage() {
   const [currentYear, setCurrentYear] = useState<number | null>(null);
 
   useEffect(() => {
+    // This effect runs once on client mount
     const authStatus = localStorage.getItem('tieTrackAuth') === 'true';
     setIsAuthenticated(authStatus);
     setIsClientLoaded(true); 
@@ -46,7 +46,6 @@ export default function HomePage() {
       router.push('/login');
     }
   }, [router]);
-
 
   useEffect(() => {
     if (!isClientLoaded || isAuthenticated !== true) return; 
@@ -137,7 +136,6 @@ export default function HomePage() {
         categoriesStateChanged = true;
     }
 
-
     if (categoriesStateChanged) {
       const sortedNewCategories = newCategoriesSnapshot.sort();
       const sortedCurrentCategories = [...categories].sort();
@@ -172,12 +170,13 @@ export default function HomePage() {
       return false;
     }
     const newCategories = [...categories, trimmedName].sort();
-    setCategories(newCategories);
+    setCategories(newCategories); // This will trigger the useEffect to save to localStorage
     toast({ title: "Categoria Adicionada", description: `A categoria "${trimmedName}" foi adicionada.` });
     return true;
   }, [categories, toast]);
 
   const handleDeleteCategory = useCallback((categoryToDelete: TieCategory) => {
+    if (!isClientLoaded || isAuthenticated !== true) return;
     if (!categoryToDelete || categoryToDelete === UNCATEGORIZED_LABEL) {
         toast({ title: "Ação não permitida", description: `A categoria "${UNCATEGORIZED_LABEL}" não pode ser removida diretamente.`, variant: "destructive" });
         return;
@@ -199,10 +198,11 @@ export default function HomePage() {
     }
 
     toast({ title: "Categoria Removida", description: `A categoria "${categoryToDelete}" foi removida. Gravatas movidas para "${UNCATEGORIZED_LABEL}".` });
-  }, [ties, categories, activeTab, toast]);
+  }, [ties, categories, activeTab, toast, isClientLoaded, isAuthenticated]);
 
 
   const handleFormSubmit = useCallback(async (data: TieFormData) => {
+    if (!isClientLoaded || isAuthenticated !== true) return;
     const finalImageUrl = await processImageAndGetUrl(data.imageFile, data.imageUrl);
     
     const tieCategory = data.category && data.category.trim() !== "" ? data.category : UNCATEGORIZED_LABEL;
@@ -230,10 +230,9 @@ export default function HomePage() {
       setCategories(newCategories);
     }
 
-
     setEditingTie(undefined);
     setIsDialogOpen(false);
-  }, [categories, editingTie, toast]);
+  }, [categories, editingTie, toast, isClientLoaded, isAuthenticated]);
 
   const handleEditTie = (tie: Tie) => {
     setEditingTie({ ...tie, imageFile: null });
@@ -241,6 +240,7 @@ export default function HomePage() {
   };
 
   const handleDeleteTie = (id: string) => {
+    if (!isClientLoaded || isAuthenticated !== true) return;
     const tieToDelete = ties.find(t => t.id === id);
     setTies(prevTies => prevTies.filter(t => t.id !== id));
     if (tieToDelete) {
@@ -255,13 +255,12 @@ export default function HomePage() {
 
   const handleLogout = () => {
     localStorage.removeItem('tieTrackAuth');
-    setIsAuthenticated(false);
-    router.push('/login');
+    setIsAuthenticated(false); // This will trigger re-render and redirect in the main condition
+    router.push('/login'); // Explicit redirect for robustness
     toast({ title: "Logout Realizado", description: "Você foi desconectado." });
   };
 
-
-  if (!isClientLoaded) {
+  if (!isClientLoaded || isAuthenticated === null) {
     return (
       <div className="flex flex-col justify-center items-center min-h-screen bg-background p-4">
         <Shirt size={64} className="text-primary mb-6" />
@@ -270,9 +269,8 @@ export default function HomePage() {
     );
   }
 
-  if (!isAuthenticated) { // Check if authenticated *after* client is loaded
-    // This state is usually brief as useEffect above would have redirected.
-    // Can show a specific message or a loader.
+  if (isAuthenticated === false) { 
+    // This state is usually brief as the first useEffect handles the redirect
     return (
       <div className="flex flex-col justify-center items-center min-h-screen bg-background p-4">
         <Shirt size={64} className="text-primary mb-6" />
@@ -281,6 +279,7 @@ export default function HomePage() {
     );
   }
 
+  // If we reach here, isClientLoaded is true and isAuthenticated is true
   const filteredTies = ties.filter(tie =>
     tie.name.toLowerCase().includes(searchTerm.toLowerCase())
   );
@@ -296,7 +295,6 @@ export default function HomePage() {
           tabsToDisplay.push(cat);
       }
   });
-
 
   return (
     <div className="min-h-screen bg-background text-foreground" suppressHydrationWarning={true}>
@@ -320,57 +318,51 @@ export default function HomePage() {
             <Button onClick={openAddDialog} variant="default" className="w-full sm:w-auto">
               <PlusCircle size={20} className="mr-2" /> Adicionar Nova Gravata
             </Button>
-            {isAuthenticated && (
-              <Button onClick={handleLogout} variant="outline" className="w-full sm:w-auto">
-                <LogOut size={20} className="mr-2" /> Sair
-              </Button>
-            )}
+            <Button onClick={handleLogout} variant="outline" className="w-full sm:w-auto">
+              <LogOut size={20} className="mr-2" /> Sair
+            </Button>
           </div>
         </div>
       </header>
 
-      {isClientLoaded && isAuthenticated && ( // Main content only renders if client loaded and authenticated
-        <main className="container mx-auto p-4 md:p-8">
-          <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-            <TabsList className="flex flex-wrap justify-start gap-2 mb-6 pb-2 border-b border-border">
-              {tabsToDisplay.map((category) => (
-                <div key={category} className="relative group">
-                  <TabsTrigger value={category} className="text-sm px-3 py-1.5 h-auto">
-                    {category}
-                  </TabsTrigger>
-                </div>
-              ))}
-            </TabsList>
+      <main className="container mx-auto p-4 md:p-8">
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+          <TabsList className="flex flex-wrap justify-start gap-2 mb-6 pb-2 border-b border-border">
+            {tabsToDisplay.map((category) => (
+              <div key={category} className="relative group">
+                <TabsTrigger value={category} className="text-sm px-3 py-1.5 h-auto">
+                  {category}
+                </TabsTrigger>
+              </div>
+            ))}
+          </TabsList>
 
-            {tabsToDisplay.map((category) => {
-              const tiesForTab = category.toLowerCase() === "todas"
-                ? filteredTies
-                : filteredTies.filter(tie => tie.category === category);
-              return (
-                <TabsContent key={category} value={category} className="mt-0">
-                  <TieList
-                    ties={tiesForTab}
-                    onEdit={handleEditTie}
-                    onDelete={handleDeleteTie}
-                  />
-                </TabsContent>
-              );
-            })}
-          </Tabs>
-        </main>
-      )}
+          {tabsToDisplay.map((category) => {
+            const tiesForTab = category.toLowerCase() === "todas"
+              ? filteredTies
+              : filteredTies.filter(tie => tie.category === category);
+            return (
+              <TabsContent key={category} value={category} className="mt-0">
+                <TieList
+                  ties={tiesForTab}
+                  onEdit={handleEditTie}
+                  onDelete={handleDeleteTie}
+                />
+              </TabsContent>
+            );
+          })}
+        </Tabs>
+      </main>
       
-      {isClientLoaded && isAuthenticated && ( // Dialog only renders if client loaded and authenticated
-        <AddTieDialog
-            open={isDialogOpen}
-            onOpenChange={setIsDialogOpen}
-            onSubmit={handleFormSubmit}
-            initialData={editingTie}
-            allCategories={categories} 
-            onAddCategory={handleAddCategory}
-            onDeleteCategory={handleDeleteCategory}
-        />
-      )}
+      <AddTieDialog
+          open={isDialogOpen}
+          onOpenChange={setIsDialogOpen}
+          onSubmit={handleFormSubmit}
+          initialData={editingTie}
+          allCategories={categories} 
+          onAddCategory={handleAddCategory}
+          onDeleteCategory={handleDeleteCategory}
+      />
       
       <footer className="py-6 text-center text-sm text-muted-foreground border-t border-border mt-12">
         © {currentYear || new Date().getFullYear()} TieTrack. Mantenha sua coleção organizada.
@@ -378,6 +370,3 @@ export default function HomePage() {
     </div>
   );
 }
-    
-
-    

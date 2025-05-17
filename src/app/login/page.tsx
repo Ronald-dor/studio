@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
-import { Shirt, User, Lock } from 'lucide-react'; // User and Lock icons
+import { Shirt, User, Lock } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
 const USERNAME = "Rsgravataria";
@@ -21,9 +21,11 @@ export default function LoginPage() {
   const { toast } = useToast();
   
   const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
+  const [currentYear, setCurrentYear] = useState<number | null>(null);
 
   useEffect(() => {
-    // Check auth status on mount
+    // This effect runs only on the client after mount
+    setCurrentYear(new Date().getFullYear());
     const auth = localStorage.getItem('tieTrackAuth');
     if (auth === 'true') {
       setIsAuthenticated(true);
@@ -43,7 +45,7 @@ export default function LoginPage() {
         title: "Login Bem-sucedido!",
         description: "Redirecionando para o painel...",
       });
-      setIsAuthenticated(true);
+      setIsAuthenticated(true); // Set state to trigger re-render for redirect
       router.push('/'); 
     } else {
       setError("Nome de usuário ou senha inválidos.");
@@ -65,8 +67,7 @@ export default function LoginPage() {
   }
   
   if (isAuthenticated === true) {
-     // This case should ideally be handled by the redirect in useEffect,
-     // but as a fallback:
+     // This state is usually brief as the router.push in useEffect handles the redirect
      return (
       <div className="flex flex-col justify-center items-center min-h-screen bg-background p-4">
         <Shirt size={64} className="text-primary mb-6" />
@@ -75,7 +76,7 @@ export default function LoginPage() {
     );
   }
 
-
+  // Only render form if isAuthenticated is false
   return (
     <div className="flex flex-col items-center justify-center min-h-screen bg-background p-4" suppressHydrationWarning={true}>
       <Card className="w-full max-w-sm shadow-xl">
@@ -127,7 +128,7 @@ export default function LoginPage() {
       </Card>
 
       <footer className="py-8 text-center text-sm text-muted-foreground">
-        © 2025 TieTrack. Todos os direitos reservados.
+        © {currentYear || new Date().getFullYear()} TieTrack. Todos os direitos reservados.
       </footer>
     </div>
   );
