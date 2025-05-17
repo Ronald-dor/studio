@@ -32,7 +32,7 @@ export default function HomePage() {
   const [searchTerm, setSearchTerm] = useState('');
   const { toast } = useToast();
   const [activeTab, setActiveTab] = useState<string>("Todas");
-  const [isClientLoaded, setIsClientLoaded] = useState(false); // Renamed from isClient for clarity
+  const [isClientLoaded, setIsClientLoaded] = useState(false);
   const [currentYear, setCurrentYear] = useState<number | null>(null);
 
   useEffect(() => {
@@ -42,7 +42,7 @@ export default function HomePage() {
     if (!authStatus) {
       router.replace('/login');
     } else {
-      setIsClientLoaded(true); // Set to true only if authenticated
+      setIsClientLoaded(true);
       setCurrentYear(new Date().getFullYear());
     }
   }, [router]);
@@ -162,7 +162,7 @@ export default function HomePage() {
       return false;
     }
     const newCategories = [...categories, trimmedName].sort();
-    setCategories(newCategories); // This will trigger the useEffect to save to localStorage
+    setCategories(newCategories);
     toast({ title: "Categoria Adicionada", description: `A categoria "${trimmedName}" foi adicionada.` });
     return true;
   }, [categories, toast]);
@@ -198,7 +198,7 @@ export default function HomePage() {
     }
     
     const finalUpdatedCategories = updatedCategories.sort();
-    setCategories(finalUpdatedCategories); // This will trigger the useEffect to save to localStorage
+    setCategories(finalUpdatedCategories); 
     
     if (activeTab === categoryToDelete) {
         setActiveTab("Todas");
@@ -233,7 +233,7 @@ export default function HomePage() {
 
     if (!categories.includes(tieCategory)) {
       const newCategories = [...categories, tieCategory].sort();
-      setCategories(newCategories); // This will trigger the useEffect to save to localStorage
+      setCategories(newCategories);
     }
 
     setEditingTie(undefined);
@@ -270,13 +270,11 @@ export default function HomePage() {
       <div className="flex flex-col justify-center items-center min-h-screen bg-background p-4">
         <Shirt size={64} className="text-primary mb-6" />
         <p className="text-muted-foreground">Verificando autenticação...</p>
-        {/* You can add a spinner here if you like */}
       </div>
     );
   }
 
   if (!isAuthenticated) {
-    // This case should ideally be handled by the redirect, but as a fallback:
      return (
       <div className="flex flex-col justify-center items-center min-h-screen bg-background p-4">
         <Shirt size={64} className="text-primary mb-6" />
@@ -290,7 +288,6 @@ export default function HomePage() {
     tie.name.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-   // Tab ordering logic - simplified as categories will be loaded/sorted already
    let tabsToDisplay = ["Todas"];
    const uniqueSortedCategories = Array.from(new Set(categories)).sort();
  
@@ -303,20 +300,16 @@ export default function HomePage() {
      }
    });
     
-   // Ensure "Todas" is first if not already
    if (tabsToDisplay[0] !== "Todas" && tabsToDisplay.includes("Todas")) {
      tabsToDisplay = ["Todas", ...tabsToDisplay.filter(t => t !== "Todas")];
    } else if (!tabsToDisplay.includes("Todas")) {
      tabsToDisplay.unshift("Todas");
    }
  
-   // If no categories exist other than potentially "Todas" or "UNCATEGORIZED_LABEL"
    if (tabsToDisplay.length === 1 && tabsToDisplay[0] === "Todas") {
        if (categories.includes(UNCATEGORIZED_LABEL) && !tabsToDisplay.includes(UNCATEGORIZED_LABEL)) {
            tabsToDisplay.push(UNCATEGORIZED_LABEL);
        } else if (categories.length === 0 && !defaultCategories.includes(UNCATEGORIZED_LABEL)) {
-           // If truly no categories and "Uncategorized" is not a default, show it.
-           // This covers an edge case of empty local storage.
            if(!tabsToDisplay.includes(UNCATEGORIZED_LABEL)) tabsToDisplay.push(UNCATEGORIZED_LABEL);
        }
    }
@@ -354,7 +347,7 @@ export default function HomePage() {
         </div>
       </header>
 
-      {isClientLoaded && ( // Only render main content if client has loaded and user is authenticated
+      {isClientLoaded && ( 
         <main className="container mx-auto p-4 md:p-8">
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
             <TabsList className="flex flex-wrap justify-start gap-2 mb-6 pb-2 border-b border-border">
@@ -384,7 +377,7 @@ export default function HomePage() {
           </Tabs>
         </main>
       )}
-      {!isClientLoaded && isAuthenticated && ( // Show loading for main content if authenticated but client not fully ready for it
+      {!isClientLoaded && isAuthenticated && ( 
          <main className="container mx-auto p-4 md:p-8">
            <div className="text-center py-10">
              <p className="text-xl text-muted-foreground">Carregando dados...</p>
@@ -393,7 +386,7 @@ export default function HomePage() {
       )}
 
 
-      {isClientLoaded && isAuthenticated && ( // Only render dialog if client is loaded and authenticated
+      {isClientLoaded && isAuthenticated && ( 
         <AddTieDialog
           open={isDialogOpen}
           onOpenChange={setIsDialogOpen}

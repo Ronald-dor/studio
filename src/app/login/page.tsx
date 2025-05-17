@@ -16,9 +16,11 @@ const LoginPage = () => {
   const router = useRouter();
   const { toast } = useToast();
   const [isClient, setIsClient] = useState(false);
+  const [currentYear, setCurrentYear] = useState<number | null>(null);
 
   useEffect(() => {
     setIsClient(true);
+    setCurrentYear(new Date().getFullYear());
   }, []);
 
   useEffect(() => {
@@ -107,7 +109,7 @@ const LoginPage = () => {
           </form>
         </CardContent>
         <CardFooter className="text-center text-xs text-muted-foreground mt-4">
-          <p>&copy; {new Date().getFullYear()} TieTrack. Todos os direitos reservados.</p>
+          <p>&copy; {currentYear || new Date().getFullYear()} TieTrack. Todos os direitos reservados.</p>
         </CardFooter>
       </Card>
     </div>
