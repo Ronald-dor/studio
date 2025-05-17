@@ -36,7 +36,6 @@ export default function HomePage() {
   const [currentYear, setCurrentYear] = useState<number | null>(null);
 
   useEffect(() => {
-    // This effect runs once on client mount
     const authStatus = localStorage.getItem('tieTrackAuth') === 'true';
     setIsAuthenticated(authStatus);
     setIsClientLoaded(true); 
@@ -114,35 +113,17 @@ export default function HomePage() {
   useEffect(() => {
     if (!isClientLoaded || isAuthenticated !== true) return;
 
-    const hasUncategorizedTies = ties.some(tie => tie.category === UNCATEGORIZED_LABEL);
-    let categoriesStateChanged = false;
-    let newCategoriesSnapshot = [...categories];
-
-    if (hasUncategorizedTies && !newCategoriesSnapshot.includes(UNCATEGORIZED_LABEL)) {
-      newCategoriesSnapshot.push(UNCATEGORIZED_LABEL);
-      categoriesStateChanged = true;
-    } else if (!hasUncategorizedTies && newCategoriesSnapshot.includes(UNCATEGORIZED_LABEL)) {
-      const isDefaultUncategorized = defaultCategories.includes(UNCATEGORIZED_LABEL);
-      const otherCategoriesExist = newCategoriesSnapshot.filter(c => c !== UNCATEGORIZED_LABEL).length > 0;
-      
-      if (!isDefaultUncategorized && otherCategoriesExist) {
-        newCategoriesSnapshot = newCategoriesSnapshot.filter(cat => cat !== UNCATEGORIZED_LABEL);
-        categoriesStateChanged = true;
-      }
+    const hasActualUncategorizedTies = ties.some(tie => tie.category === UNCATEGORIZED_LABEL);
+    const uncategorizedLabelExistsInState = categories.includes(UNCATEGORIZED_LABEL);
+  
+    if (hasActualUncategorizedTies && !uncategorizedLabelExistsInState) {
+      // If there are ties that are 'Sem Categoria' but 'Sem Categoria' is not in the categories list, add it.
+      setCategories(prevCategories => Array.from(new Set([...prevCategories, UNCATEGORIZED_LABEL])).sort());
     }
-    
-    if (newCategoriesSnapshot.length === 0 && !newCategoriesSnapshot.includes(UNCATEGORIZED_LABEL)) {
-        newCategoriesSnapshot.push(UNCATEGORIZED_LABEL);
-        categoriesStateChanged = true;
-    }
-
-    if (categoriesStateChanged) {
-      const sortedNewCategories = newCategoriesSnapshot.sort();
-      const sortedCurrentCategories = [...categories].sort();
-      if (JSON.stringify(sortedNewCategories) !== JSON.stringify(sortedCurrentCategories)) {
-        setCategories(sortedNewCategories);
-      }
-    }
+    // We no longer automatically remove UNCATEGORIZED_LABEL if no ties use it.
+    // We no longer automatically add UNCATEGORIZED_LABEL if the categories list is empty by default here.
+    // Manual deletion should be respected. Adding new ties without a category will re-add it via handleFormSubmit.
+    // If all categories are deleted, and no ties are 'UNCATEGORIZED_LABEL', the list can be empty.
   }, [ties, categories, isClientLoaded, isAuthenticated]);
 
 
@@ -170,24 +151,31 @@ export default function HomePage() {
       return false;
     }
     const newCategories = [...categories, trimmedName].sort();
-    setCategories(newCategories); // This will trigger the useEffect to save to localStorage
+    setCategories(newCategories);
     toast({ title: "Categoria Adicionada", description: `A categoria "${trimmedName}" foi adicionada.` });
     return true;
   }, [categories, toast]);
 
   const handleDeleteCategory = useCallback((categoryToDelete: TieCategory) => {
     if (!isClientLoaded || isAuthenticated !== true) return;
-    if (!categoryToDelete || categoryToDelete === UNCATEGORIZED_LABEL) {
-        toast({ title: "Ação não permitida", description: `A categoria "${UNCATEGORIZED_LABEL}" não pode ser removida diretamente.`, variant: "destructive" });
-        return;
-    }
 
-    const updatedTies = ties.map(tie => {
-      if (tie.category === categoryToDelete) {
-        return { ...tie, category: UNCATEGORIZED_LABEL };
-      }
-      return tie;
-    });
+    let updatedTies = [...ties];
+    let toastMessage = "";
+
+    if (categoryToDelete !== UNCATEGORIZED_LABEL) {
+        updatedTies = ties.map(tie => {
+            if (tie.category === categoryToDelete) {
+                return { ...tie, category: UNCATEGORIZED_LABEL };
+            }
+            return tie;
+        });
+        toastMessage = `A categoria "${categoryToDelete}" foi removida. Gravatas movidas para "${UNCATEGORIZED_LABEL}".`;
+    } else {
+        // If deleting UNCATEGORIZED_LABEL, ties remain with that category string in their data.
+        // The category is just removed from the filterable list.
+        toastMessage = `A categoria "${UNCATEGORIZED_LABEL}" foi removida dos filtros. Gravatas existentes nesta categoria manterão essa designação.`;
+    }
+    
     setTies(updatedTies); 
 
     const updatedCategories = categories.filter(cat => cat !== categoryToDelete).sort();
@@ -197,7 +185,7 @@ export default function HomePage() {
         setActiveTab("Todas");
     }
 
-    toast({ title: "Categoria Removida", description: `A categoria "${categoryToDelete}" foi removida. Gravatas movidas para "${UNCATEGORIZED_LABEL}".` });
+    toast({ title: "Categoria Removida", description: toastMessage });
   }, [ties, categories, activeTab, toast, isClientLoaded, isAuthenticated]);
 
 
@@ -225,7 +213,7 @@ export default function HomePage() {
       toast({ title: "Gravata Adicionada", description: `${data.name} foi adicionada ao seu inventário.` });
     }
 
-    if (!categories.includes(tieCategory) && tieCategory !== UNCATEGORIZED_LABEL) { 
+    if (!categories.includes(tieCategory)) { 
       const newCategories = [...categories, tieCategory].sort();
       setCategories(newCategories);
     }
@@ -255,8 +243,8 @@ export default function HomePage() {
 
   const handleLogout = () => {
     localStorage.removeItem('tieTrackAuth');
-    setIsAuthenticated(false); // This will trigger re-render and redirect in the main condition
-    router.push('/login'); // Explicit redirect for robustness
+    setIsAuthenticated(false); 
+    router.push('/login'); 
     toast({ title: "Logout Realizado", description: "Você foi desconectado." });
   };
 
@@ -270,7 +258,6 @@ export default function HomePage() {
   }
 
   if (isAuthenticated === false) { 
-    // This state is usually brief as the first useEffect handles the redirect
     return (
       <div className="flex flex-col justify-center items-center min-h-screen bg-background p-4">
         <Shirt size={64} className="text-primary mb-6" />
@@ -279,7 +266,6 @@ export default function HomePage() {
     );
   }
 
-  // If we reach here, isClientLoaded is true and isAuthenticated is true
   const filteredTies = ties.filter(tie =>
     tie.name.toLowerCase().includes(searchTerm.toLowerCase())
   );

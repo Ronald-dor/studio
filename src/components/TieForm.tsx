@@ -24,7 +24,6 @@ interface TieFormProps {
   onSubmit: (data: TieFormData) => void;
   initialData?: TieFormData;
   onCancel?: () => void;
-  // Reverted: Props changed back
   formCategories: TieCategory[]; 
   allCategoriesForManagement: TieCategory[];
   onAddCategory: (categoryName: string) => Promise<boolean>;
@@ -35,7 +34,6 @@ export function TieForm({
   onSubmit, 
   initialData, 
   onCancel, 
-  // Reverted: Props changed back
   formCategories, 
   allCategoriesForManagement, 
   onAddCategory, 
@@ -57,9 +55,7 @@ export function TieForm({
   const [webcamStream, setWebcamStream] = useState<MediaStream | null>(null);
   const [capturedImageDataUrl, setCapturedImageDataUrl] = useState<string | null>(null);
 
-  // Reverted: Use formCategories directly for the dropdown
   const selectDropdownCategories = formCategories; 
-  // Reverted: Use allCategoriesForManagement directly for the management dialog
   const categoriesForManagementDialog = allCategoriesForManagement;
 
   const form = useForm<TieFormData>({ 
@@ -69,7 +65,6 @@ export function TieForm({
       quantity: initialData?.quantity || 0,
       unitPrice: initialData?.unitPrice || 0,
       valueInQuantity: initialData?.valueInQuantity || 0,
-      // Reverted: Use selectDropdownCategories (which is formCategories)
       category: initialData?.category || (selectDropdownCategories.length > 0 ? selectDropdownCategories[0] : UNCATEGORIZED_LABEL), 
       imageUrl: initialData?.imageUrl || `https://placehold.co/300x400.png`,
       imageFile: null,
@@ -77,7 +72,6 @@ export function TieForm({
   });
 
   useEffect(() => {
-    // Reverted: Use formCategories for defaultCat logic
     const defaultCat = formCategories.length > 0 ? formCategories[0] : UNCATEGORIZED_LABEL;
     if (initialData) {
         form.reset({
@@ -101,7 +95,7 @@ export function TieForm({
         });
         setPreviewUrl(null);
     }
-  }, [initialData, form, formCategories]); // Reverted: Dependency on formCategories
+  }, [initialData, form, formCategories]);
 
 
   const handleImageChange = (event: ChangeEvent<HTMLInputElement>) => {
@@ -131,7 +125,6 @@ export function TieForm({
       imageUrl: previewUrl || `https://placehold.co/300x400.png`
     };
     onSubmit(dataToSubmit);
-    // Reverted: Use formCategories for defaultCat logic
     const defaultCat = formCategories.length > 0 ? formCategories[0] : UNCATEGORIZED_LABEL;
     form.reset({
         name: '',
@@ -161,10 +154,6 @@ export function TieForm({
   };
 
   const confirmDeleteCategory = (category: TieCategory) => {
-    if (category === UNCATEGORIZED_LABEL) {
-      toast({ title: "Ação não permitida", description: `A categoria "${category}" não pode ser removida.`, variant: "destructive" });
-      return;
-    }
     setCategoryToDelete(category);
     setIsConfirmDeleteCategoryOpen(true);
   };
@@ -173,11 +162,10 @@ export function TieForm({
     if (categoryToDelete) {
       onDeleteCategory(categoryToDelete);
       if (form.getValues('category') === categoryToDelete) {
-        // Reverted: Use allCategoriesForManagement for newDefaultCat logic
         const remainingCats = allCategoriesForManagement.filter(cat => cat !== categoryToDelete);
         const newDefaultCat = remainingCats.length > 0 
                                 ? remainingCats[0] 
-                                : UNCATEGORIZED_LABEL;
+                                : UNCATEGORIZED_LABEL; // Fallback to UNCATEGORIZED_LABEL if all deletable cats are gone
         form.setValue('category', newDefaultCat);
       }
       setCategoryToDelete(null);
@@ -365,7 +353,6 @@ export function TieForm({
                             </SelectTrigger>
                           </FormControl>
                           <SelectContent>
-                            {/* Reverted: Use selectDropdownCategories (which is formCategories) */}
                             {selectDropdownCategories.map((category) => (
                               <SelectItem key={category} value={category}>
                                 {category}
@@ -497,14 +484,12 @@ export function TieForm({
                 </div>
                 
                 <Label className="text-sm font-medium">Categorias Existentes:</Label>
-                {/* Reverted: Use categoriesForManagementDialog */}
                 {categoriesForManagementDialog.length > 0 ? (
                   <ScrollArea className="h-40 rounded-md border p-2">
                     <ul className="space-y-1">
                         {categoriesForManagementDialog.map((category) => (
                             <li key={category} className="flex items-center justify-between text-sm p-1 rounded hover:bg-muted/50">
                                 <span>{category}</span>
-                                {category !== UNCATEGORIZED_LABEL && ( 
                                 <Button 
                                     variant="ghost" 
                                     size="icon" 
@@ -514,13 +499,12 @@ export function TieForm({
                                 >
                                     <Trash2 size={14} />
                                 </Button>
-                                )}
                             </li>
                         ))}
                     </ul>
                   </ScrollArea>
                 ) : (
-                  <p className="text-sm text-muted-foreground">Nenhuma categoria definida (além de "Sem Categoria", se aplicável).</p>
+                  <p className="text-sm text-muted-foreground">Nenhuma categoria definida.</p>
                 )}
             </div>
             <AlertDialogFooter>
@@ -534,7 +518,9 @@ export function TieForm({
           <AlertDialogHeader>
             <AlertDialogTitle>Confirmar Remoção</AlertDialogTitle>
             <AlertDialogDescription>
-              Tem certeza que deseja remover a categoria "{categoryToDelete}"? As gravatas nesta categoria serão movidas para "{UNCATEGORIZED_LABEL}".
+              {categoryToDelete === UNCATEGORIZED_LABEL
+                ? `Tem certeza que deseja remover a categoria "${UNCATEGORIZED_LABEL}"? Gravatas nesta categoria manterão esta designação em seus dados, mas a categoria não será uma opção de filtro até ser recriada.`
+                : `Tem certeza que deseja remover a categoria "${categoryToDelete}"? As gravatas nesta categoria serão movidas para "${UNCATEGORIZED_LABEL}".`}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
