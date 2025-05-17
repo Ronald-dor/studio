@@ -24,7 +24,7 @@ const UNCATEGORIZED_LABEL = 'Sem Categoria';
 export default function HomePage() {
   const router = useRouter();
   const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
-  const [isClientLoaded, setIsClientLoaded] = useState(false); // Tracks if client-side logic has run
+  const [isClientLoaded, setIsClientLoaded] = useState(false); 
 
   const [ties, setTies] = useState<Tie[]>([]);
   const [categories, setCategories] = useState<TieCategory[]>([]);
@@ -36,11 +36,10 @@ export default function HomePage() {
   const [currentYear, setCurrentYear] = useState<number | null>(null);
 
   useEffect(() => {
-    // This effect runs once on the client to determine auth status and client readiness
     const auth = localStorage.getItem('tieTrackAuthenticated') === 'true';
     setIsAuthenticated(auth);
-    setIsClientLoaded(true); // Indicate client environment is active and initial hydration should be complete
-    setCurrentYear(new Date().getFullYear()); // Safe to set here as it's client-side
+    setIsClientLoaded(true); 
+    setCurrentYear(new Date().getFullYear());
 
     if (!auth) {
       router.replace('/login');
@@ -48,15 +47,22 @@ export default function HomePage() {
   }, [router]);
 
 
-  // Load ties and categories from localStorage on initial mount, only if authenticated and client loaded
   useEffect(() => {
-    if (!isClientLoaded || isAuthenticated !== true) return; // Ensure client loaded AND authenticated
+    if (!isClientLoaded || isAuthenticated !== true) return; 
 
     let activeTies: Tie[] = [];
     const storedTiesData = localStorage.getItem('tieTrackTies');
     if (storedTiesData) {
-      activeTies = JSON.parse(storedTiesData);
-      setTies(activeTies);
+      try {
+        activeTies = JSON.parse(storedTiesData);
+        setTies(activeTies);
+      } catch (error) {
+        console.error("Falha ao analisar gravatas do localStorage:", error);
+        const tiesWithIds = initialTiesData.map(tie => ({ ...tie, id: crypto.randomUUID(), valueInQuantity: tie.valueInQuantity || (tie.quantity * tie.unitPrice) }));
+        setTies(tiesWithIds);
+        activeTies = tiesWithIds;
+        localStorage.removeItem('tieTrackTies'); // Limpa dados corrompidos
+      }
     } else {
       const tiesWithIds = initialTiesData.map(tie => ({ ...tie, id: crypto.randomUUID(), valueInQuantity: tie.valueInQuantity || (tie.quantity * tie.unitPrice) }));
       setTies(tiesWithIds);
@@ -65,24 +71,37 @@ export default function HomePage() {
 
     const storedCategoriesData = localStorage.getItem('tieTrackCategories');
     if (storedCategoriesData) {
-      const parsedCategories = JSON.parse(storedCategoriesData) as TieCategory[];
-      const hasUncategorizedTies = activeTies.some(tie => tie.category === UNCATEGORIZED_LABEL);
-      
-      let finalCategoriesSet = new Set(parsedCategories);
-      if (hasUncategorizedTies && !parsedCategories.includes(UNCATEGORIZED_LABEL)) {
-        finalCategoriesSet.add(UNCATEGORIZED_LABEL);
-      }
-      
-      const noTiesInUncategorized = !activeTies.some(tie => tie.category === UNCATEGORIZED_LABEL);
-      const canRemoveUncategorized = noTiesInUncategorized && 
-                                   parsedCategories.includes(UNCATEGORIZED_LABEL) &&
-                                   !defaultCategories.includes(UNCATEGORIZED_LABEL) &&
-                                   parsedCategories.filter(c => c !== UNCATEGORIZED_LABEL).length > 0;
+      try {
+        const parsedCategories = JSON.parse(storedCategoriesData) as TieCategory[];
+        const hasUncategorizedTies = activeTies.some(tie => tie.category === UNCATEGORIZED_LABEL);
+        
+        let finalCategoriesSet = new Set(parsedCategories);
+        if (hasUncategorizedTies && !parsedCategories.includes(UNCATEGORIZED_LABEL)) {
+          finalCategoriesSet.add(UNCATEGORIZED_LABEL);
+        }
+        
+        const noTiesInUncategorized = !activeTies.some(tie => tie.category === UNCATEGORIZED_LABEL);
+        const canRemoveUncategorized = noTiesInUncategorized && 
+                                     parsedCategories.includes(UNCATEGORIZED_LABEL) &&
+                                     !defaultCategories.includes(UNCATEGORIZED_LABEL) &&
+                                     parsedCategories.filter(c => c !== UNCATEGORIZED_LABEL).length > 0;
 
-      if (canRemoveUncategorized) {
-        finalCategoriesSet.delete(UNCATEGORIZED_LABEL);
+        if (canRemoveUncategorized) {
+          finalCategoriesSet.delete(UNCATEGORIZED_LABEL);
+        }
+        setCategories(Array.from(finalCategoriesSet).sort());
+      } catch (error) {
+        console.error("Falha ao analisar categorias do localStorage:", error);
+        const catsFromInitialActiveTies = activeTies.map(tie => tie.category);
+        const initialSetupCategoriesSet = new Set([...defaultCategories, ...catsFromInitialActiveTies]);
+        const hasUncategorizedInActiveTies = activeTies.some(tie => tie.category === UNCATEGORIZED_LABEL);
+
+        if (hasUncategorizedInActiveTies || initialSetupCategoriesSet.size === 0 ) {
+          initialSetupCategoriesSet.add(UNCATEGORIZED_LABEL);
+        }
+        setCategories(Array.from(initialSetupCategoriesSet).sort());
+        localStorage.removeItem('tieTrackCategories'); // Limpa dados corrompidos
       }
-      setCategories(Array.from(finalCategoriesSet).sort());
     } else {
       const catsFromInitialActiveTies = activeTies.map(tie => tie.category);
       const initialSetupCategoriesSet = new Set([...defaultCategories, ...catsFromInitialActiveTies]);
@@ -96,19 +115,19 @@ export default function HomePage() {
     }
   }, [isClientLoaded, isAuthenticated]);
 
-  // Save ties to localStorage whenever they change
+
   useEffect(() => {
     if (!isClientLoaded || isAuthenticated !== true) return;
     localStorage.setItem('tieTrackTies', JSON.stringify(ties));
   }, [ties, isClientLoaded, isAuthenticated]);
 
-  // Save categories to localStorage whenever they change (centralized)
+
   useEffect(() => {
     if (!isClientLoaded || isAuthenticated !== true) return;
     localStorage.setItem('tieTrackCategories', JSON.stringify(categories));
   }, [categories, isClientLoaded, isAuthenticated]);
 
-  // Manage UNCATEGORIZED_LABEL based on ties and categories
+
   useEffect(() => {
     if (!isClientLoaded || isAuthenticated !== true) return;
     const hasUncategorizedTies = ties.some(tie => tie.category === UNCATEGORIZED_LABEL);
@@ -261,12 +280,10 @@ export default function HomePage() {
   const handleLogout = () => {
     localStorage.removeItem('tieTrackAuthenticated');
     setIsAuthenticated(false);
-    // router.replace('/login'); // The main useEffect will handle this redirection
     toast({ title: 'Logout realizado', description: 'Você saiu da sua conta.' });
   };
 
   if (!isClientLoaded || isAuthenticated === null) {
-    // Initial loading state, consistent for server and first client render
     return (
       <div className="flex flex-col justify-center items-center min-h-screen bg-background p-4">
         <Shirt size={64} className="text-primary mb-6" />
@@ -276,8 +293,6 @@ export default function HomePage() {
   }
 
   if (isAuthenticated === false) {
-     // Client is loaded, but user is not authenticated.
-     // The useEffect has already initiated a redirect.
     return (
       <div className="flex flex-col justify-center items-center min-h-screen bg-background p-4">
         <Shirt size={64} className="text-primary mb-6" />
@@ -286,7 +301,6 @@ export default function HomePage() {
     );
   }
 
-  // If isClientLoaded is true AND isAuthenticated is true, render the app content.
   const filteredTies = ties.filter(tie =>
     tie.name.toLowerCase().includes(searchTerm.toLowerCase())
   );
@@ -395,3 +409,5 @@ export default function HomePage() {
     </div>
   );
 }
+
+    
