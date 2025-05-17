@@ -2,13 +2,13 @@
 "use client";
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
+// import { useRouter } from 'next/navigation'; // No longer needed for login
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { TieList } from '@/components/TieList';
 import { AddTieDialog } from '@/components/AddTieDialog';
 import type { Tie, TieFormData, TieCategory } from '@/lib/types';
-import { PlusCircle, Shirt, Search, LogOut } from 'lucide-react';
+import { PlusCircle, Shirt, Search } from 'lucide-react'; // LogOut removed
 import { useToast } from '@/hooks/use-toast';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { UNCATEGORIZED_LABEL } from '@/lib/types';
@@ -23,8 +23,8 @@ const defaultCategories: TieCategory[] = ['Lisa', 'Listrada', 'Pontilhada'];
 
 
 export default function HomePage() {
-  const router = useRouter();
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
+  // const router = useRouter(); // No longer needed for login
+  // const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null); // Login related state removed
   const [isClientLoaded, setIsClientLoaded] = useState(false); 
 
   const [ties, setTies] = useState<Tie[]>([]);
@@ -37,19 +37,14 @@ export default function HomePage() {
   const [currentYear, setCurrentYear] = useState<number | null>(null);
 
   useEffect(() => {
-    const auth = localStorage.getItem('tieTrackAuthenticated') === 'true';
-    setIsAuthenticated(auth);
+    // Directly load data, no auth check
     setIsClientLoaded(true); 
     setCurrentYear(new Date().getFullYear());
-
-    if (!auth) {
-      router.replace('/login');
-    }
-  }, [router]);
+  }, []);
 
 
   useEffect(() => {
-    if (!isClientLoaded || isAuthenticated !== true) return; 
+    if (!isClientLoaded) return; 
 
     let activeTies: Tie[] = [];
     const storedTiesData = localStorage.getItem('tieTrackTies');
@@ -74,13 +69,11 @@ export default function HomePage() {
     if (storedCategoriesData) {
       try {
         const parsedCategories = JSON.parse(storedCategoriesData) as TieCategory[];
-        // Let the dedicated useEffect handle UNCATEGORIZED_LABEL logic based on loaded ties
         setCategories(Array.from(new Set(parsedCategories)).sort());
       } catch (error) {
         console.error("Falha ao analisar categorias do localStorage:", error);
         const catsFromInitialActiveTies = activeTies.map(tie => tie.category);
         const initialSetupCategoriesSet = new Set([...defaultCategories, ...catsFromInitialActiveTies]);
-        // Ensure UNCATEGORIZED_LABEL is present if there are no other categories initially or if ties use it
         const hasUncategorizedInActiveTies = activeTies.some(tie => tie.category === UNCATEGORIZED_LABEL);
         if (hasUncategorizedInActiveTies || initialSetupCategoriesSet.size === 0 ) {
           initialSetupCategoriesSet.add(UNCATEGORIZED_LABEL);
@@ -99,23 +92,23 @@ export default function HomePage() {
       
       setCategories(Array.from(initialSetupCategoriesSet).sort());
     }
-  }, [isClientLoaded, isAuthenticated]);
+  }, [isClientLoaded]);
 
 
   useEffect(() => {
-    if (!isClientLoaded || isAuthenticated !== true) return;
+    if (!isClientLoaded) return;
     localStorage.setItem('tieTrackTies', JSON.stringify(ties));
-  }, [ties, isClientLoaded, isAuthenticated]);
+  }, [ties, isClientLoaded]);
 
 
   useEffect(() => {
-    if (!isClientLoaded || isAuthenticated !== true) return;
+    if (!isClientLoaded) return;
     localStorage.setItem('tieTrackCategories', JSON.stringify(categories));
-  }, [categories, isClientLoaded, isAuthenticated]);
+  }, [categories, isClientLoaded]);
 
 
   useEffect(() => {
-    if (!isClientLoaded || isAuthenticated !== true) return;
+    if (!isClientLoaded) return;
     const hasUncategorizedTies = ties.some(tie => tie.category === UNCATEGORIZED_LABEL);
     let categoriesStateChanged = false;
     let newCategoriesSnapshot = [...categories];
@@ -130,16 +123,9 @@ export default function HomePage() {
       if (!isDefaultUncategorized && otherCategoriesExist) {
         newCategoriesSnapshot = newCategoriesSnapshot.filter(cat => cat !== UNCATEGORIZED_LABEL);
         categoriesStateChanged = true;
-      } else if (!isDefaultUncategorized && !otherCategoriesExist && newCategoriesSnapshot.length === 1 && newCategoriesSnapshot[0] === UNCATEGORIZED_LABEL) {
-        // If "Sem Categoria" is the only category, it's not a default, and no ties use it, remove it.
-        // This might be too aggressive if the user wants to keep it as an option.
-        // For now, let's keep it if it's the last one, unless specifically deleted.
-        // The current logic correctly keeps it if it's the only one.
       }
     }
     
-    // Ensure `UNCATEGORIZED_LABEL` exists if there are no categories at all.
-    // This makes sure there's always at least one category selectable if `defaultCategories` is empty.
     if (newCategoriesSnapshot.length === 0 && !newCategoriesSnapshot.includes(UNCATEGORIZED_LABEL)) {
         newCategoriesSnapshot.push(UNCATEGORIZED_LABEL);
         categoriesStateChanged = true;
@@ -153,7 +139,7 @@ export default function HomePage() {
         setCategories(sortedNewCategories);
       }
     }
-  }, [ties, categories, isClientLoaded, isAuthenticated]);
+  }, [ties, categories, isClientLoaded]);
 
 
   const processImageAndGetUrl = async (imageFile: File | null | undefined, currentImageUrl?: string): Promise<string> => {
@@ -197,13 +183,13 @@ export default function HomePage() {
       }
       return tie;
     });
-    setTies(updatedTies); // This will trigger the useEffect to manage UNCATEGORIZED_LABEL in categories
+    setTies(updatedTies); 
 
     const updatedCategories = categories.filter(cat => cat !== categoryToDelete).sort();
     setCategories(updatedCategories); 
     
     if (activeTab === categoryToDelete) {
-        setActiveTab("Todas"); // Or UNCATEGORIZED_LABEL if preferred
+        setActiveTab("Todas");
     }
 
     toast({ title: "Categoria Removida", description: `A categoria "${categoryToDelete}" foi removida. Gravatas movidas para "${UNCATEGORIZED_LABEL}".` });
@@ -233,11 +219,9 @@ export default function HomePage() {
       toast({ title: "Gravata Adicionada", description: `${data.name} foi adicionada ao seu inventário.` });
     }
 
-    if (!categories.includes(tieCategory) && tieCategory !== UNCATEGORIZED_LABEL) { // Don't add UNCATEGORIZED_LABEL explicitly if it's that
+    if (!categories.includes(tieCategory) && tieCategory !== UNCATEGORIZED_LABEL) { 
       const newCategories = [...categories, tieCategory].sort();
       setCategories(newCategories);
-    } else if (tieCategory === UNCATEGORIZED_LABEL && !categories.includes(UNCATEGORIZED_LABEL)) {
-        // This case is handled by the useEffect managing UNCATEGORIZED_LABEL
     }
 
 
@@ -263,14 +247,9 @@ export default function HomePage() {
     setIsDialogOpen(true);
   };
 
-  const handleLogout = () => {
-    localStorage.removeItem('tieTrackAuthenticated');
-    setIsAuthenticated(false);
-    toast({ title: 'Logout realizado', description: 'Você saiu da sua conta.' });
-    // router.replace('/login') will be handled by useEffect watching isAuthenticated
-  };
+  // handleLogout removed
 
-  if (!isClientLoaded || isAuthenticated === null) {
+  if (!isClientLoaded) { // Simplified loading check
     return (
       <div className="flex flex-col justify-center items-center min-h-screen bg-background p-4">
         <Shirt size={64} className="text-primary mb-6" />
@@ -279,21 +258,10 @@ export default function HomePage() {
     );
   }
 
-  if (isAuthenticated === false) {
-     // This check is mainly for clarity; useEffect above handles the redirect.
-    return (
-      <div className="flex flex-col justify-center items-center min-h-screen bg-background p-4">
-        <Shirt size={64} className="text-primary mb-6" />
-        <p className="text-muted-foreground">Redirecionando para o login...</p>
-      </div>
-    );
-  }
-
   const filteredTies = ties.filter(tie =>
     tie.name.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  // Simplified tabsToDisplay logic
   const sortedCategoriesState = Array.from(new Set(categories)).sort();
   const tabsToDisplay: TieCategory[] = ["Todas"];
 
@@ -305,9 +273,6 @@ export default function HomePage() {
           tabsToDisplay.push(cat);
       }
   });
-  // If categories is empty, useEffect should have added UNCATEGORIZED_LABEL if needed.
-  // If tabsToDisplay is just ["Todas"] and categories is empty, it implies no ties and no user categories yet.
-  // UNCATEGORIZED_LABEL will be added to categories by useEffect if a tie gets that category or if all categories are removed.
 
 
   return (
@@ -332,14 +297,12 @@ export default function HomePage() {
             <Button onClick={openAddDialog} variant="default" className="w-full sm:w-auto">
               <PlusCircle size={20} className="mr-2" /> Adicionar Nova Gravata
             </Button>
-            <Button onClick={handleLogout} variant="outline" size="icon" aria-label="Sair">
-              <LogOut size={20} />
-            </Button>
+            {/* Logout Button Removed */}
           </div>
         </div>
       </header>
 
-      {isClientLoaded && isAuthenticated && (
+      {isClientLoaded && ( // Main content only renders after client is loaded
         <main className="container mx-auto p-4 md:p-8">
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
             <TabsList className="flex flex-wrap justify-start gap-2 mb-6 pb-2 border-b border-border">
@@ -370,7 +333,7 @@ export default function HomePage() {
         </main>
       )}
       
-      {isClientLoaded && isAuthenticated && (
+      {isClientLoaded && ( // Dialog only renders after client is loaded
         <AddTieDialog
             open={isDialogOpen}
             onOpenChange={setIsDialogOpen}
@@ -388,4 +351,6 @@ export default function HomePage() {
     </div>
   );
 }
+    
+
     
