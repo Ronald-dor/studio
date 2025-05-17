@@ -171,6 +171,9 @@ export function TieForm({
         const newDefaultCat = remainingCats.length > 0 
                                 ? remainingCats[0] 
                                 : UNCATEGORIZED_LABEL;
+        // Se a categoria ativa for "Sem Categoria" e ela for excluída,
+        // e não houver outras categorias, o select pode ficar com UNCATEGORIZED_LABEL mesmo que não exista mais na lista
+        // o que é aceitável, pois ao salvar, se for UNCATEGORIZED_LABEL, ela será recriada.
         form.setValue('category', newDefaultCat);
       }
       setCategoryToDelete(null);
@@ -189,27 +192,24 @@ export function TieForm({
     setCapturedImageDataUrl(null);
     setHasCameraPermission(null);
     setIsSwitchingCamera(true);
-    setVideoDevices([]); // Clear previous device list
+    setVideoDevices([]); 
 
     try {
-      // Request permission first. This helps ensure labels are available for enumerateDevices.
       const tempStream = await navigator.mediaDevices.getUserMedia({ video: true });
-      tempStream.getTracks().forEach(track => track.stop()); // We don't need this stream, just the permission.
+      tempStream.getTracks().forEach(track => track.stop()); 
 
       const devices = await navigator.mediaDevices.enumerateDevices();
       const availableVideoDevices = devices.filter(d => d.kind === 'videoinput');
 
       if (availableVideoDevices.length > 0) {
         setVideoDevices(availableVideoDevices);
-        // Prefer user-facing (front) camera as default
         const userFacingIndex = availableVideoDevices.findIndex(
             d => d.label.toLowerCase().includes('front') || 
                  d.label.toLowerCase().includes('frontal') ||
-                 d.label.toLowerCase().includes('face') || // common labels
+                 d.label.toLowerCase().includes('face') || 
                  d.label.toLowerCase().includes('webcam')
         );
         setCurrentVideoDeviceIndex(userFacingIndex !== -1 ? userFacingIndex : 0);
-        // hasCameraPermission will be set to true by the useEffect when stream starts
       } else {
         toast({ variant: "destructive", title: "Nenhuma câmera encontrada", description: "Nenhum dispositivo de vídeo foi detectado." });
         setHasCameraPermission(false);
@@ -232,7 +232,7 @@ export function TieForm({
         }
     } finally {
       setIsSwitchingCamera(false);
-      setIsWebcamDialogOpen(true); // Open dialog, useEffect will attempt to start stream
+      setIsWebcamDialogOpen(true); 
     }
   };
 
@@ -245,7 +245,7 @@ export function TieForm({
         return;
       }
 
-      if (webcamStream) { // Stop previous stream before starting/switching
+      if (webcamStream) { 
         stopWebcam();
       }
       setIsSwitchingCamera(true);
@@ -253,8 +253,6 @@ export function TieForm({
       try {
         let devicesToUse = videoDevices;
         if (devicesToUse.length === 0 && hasCameraPermission !== false) {
-          // Attempt to enumerate if not done (e.g., direct dialog open without pre-enumeration)
-          // This path is less likely if handleOpenWebcamDialog runs first.
           const tempStreamForPerm = await navigator.mediaDevices.getUserMedia({ video: true });
           tempStreamForPerm.getTracks().forEach(track => track.stop());
           const enumeratedDevices = await navigator.mediaDevices.enumerateDevices();
@@ -265,7 +263,6 @@ export function TieForm({
           }
           setVideoDevices(availableVideoDevices);
           devicesToUse = availableVideoDevices;
-           // Reset index if it was out of bounds for a previously empty list
           if (currentVideoDeviceIndex >= availableVideoDevices.length && availableVideoDevices.length > 0) {
             setCurrentVideoDeviceIndex(0);
           }
@@ -281,8 +278,8 @@ export function TieForm({
         if (!deviceIdToUse) {
             console.warn("Target deviceId not found. Current index:", currentVideoDeviceIndex, "Devices:", devicesToUse);
             if (devicesToUse.length > 0) {
-                setCurrentVideoDeviceIndex(0); // Attempt to fallback to the first device
-                setIsSwitchingCamera(false); // Allow effect to re-run
+                setCurrentVideoDeviceIndex(0); 
+                setIsSwitchingCamera(false); 
                 return; 
             } else {
                 toast({ variant: "destructive", title: "Nenhuma câmera disponível"});
@@ -318,20 +315,19 @@ export function TieForm({
 
     manageWebcamStream();
 
-    return () => { // Cleanup function
+    return () => { 
       if (webcamStream) {
         stopWebcam();
       }
     };
   }, [isWebcamDialogOpen, capturedImageDataUrl, currentVideoDeviceIndex]); 
-  // videoDevices is intentionally not a direct dependency to avoid re-running enumeration loop, 
-  // it's managed inside or by handleOpenWebcamDialog.
+
 
   const handleSwitchCamera = () => {
     if (videoDevices.length > 1 && !isSwitchingCamera) {
-      setCapturedImageDataUrl(null); // Clear any captured image
+      setCapturedImageDataUrl(null); 
       const nextIndex = (currentVideoDeviceIndex + 1) % videoDevices.length;
-      setCurrentVideoDeviceIndex(nextIndex); // This will trigger the useEffect
+      setCurrentVideoDeviceIndex(nextIndex); 
     }
   };
 
@@ -346,7 +342,6 @@ export function TieForm({
         context.drawImage(video, 0, 0, canvas.width, canvas.height);
         const dataUrl = canvas.toDataURL('image/webp'); 
         setCapturedImageDataUrl(dataUrl);
-        // stopWebcam(); // Stop stream after capture
       }
     } else {
       toast({ variant: "destructive", title: "Erro ao capturar", description: "Não foi possível acessar a stream de vídeo."});
@@ -355,7 +350,6 @@ export function TieForm({
 
   const handleRetakePhoto = () => {
     setCapturedImageDataUrl(null); 
-    // The useEffect will restart the stream for the currentVideoDeviceIndex
   };
 
   const handleUseCapturedImage = () => {
@@ -364,7 +358,7 @@ export function TieForm({
       setImageFile(null); 
       form.setValue('imageUrl', capturedImageDataUrl);
       form.setValue('imageFile', null);
-      setIsWebcamDialogOpen(false); // This will also trigger cleanup in useEffect
+      setIsWebcamDialogOpen(false); 
     }
   };
   
@@ -551,13 +545,13 @@ export function TieForm({
           
           {/* Video display area */}
           <div className={`bg-muted rounded-md overflow-hidden border ${hasCameraPermission && !capturedImageDataUrl ? 'block' : 'hidden'}`}>
-            <video ref={videoRef} autoPlay playsInline muted className="w-full aspect-video object-cover" />
+            <video ref={videoRef} autoPlay playsInline muted className="w-full aspect-[3/4] object-cover" />
           </div>
 
           {/* Captured image display area */}
           {capturedImageDataUrl && (
             <div className="bg-muted rounded-md overflow-hidden border">
-              <Image src={capturedImageDataUrl} alt="Foto Capturada" width={600} height={400} className="w-full aspect-video object-cover" data-ai-hint="gravata moda"/>
+              <Image src={capturedImageDataUrl} alt="Foto Capturada" width={480} height={640} className="w-full aspect-[3/4] object-cover" data-ai-hint="gravata moda"/>
             </div>
           )}
         </div>
@@ -646,7 +640,7 @@ export function TieForm({
             <AlertDialogTitle>Confirmar Remoção</AlertDialogTitle>
             <AlertDialogDescription>
               {categoryToDelete === UNCATEGORIZED_LABEL
-                ? `Tem certeza que deseja remover a categoria "${UNCATEGORIZED_LABEL}"? Gravatas nesta categoria manterão esta designação em seus dados, mas a categoria não será uma opção de filtro até ser recriada.`
+                ? `Tem certeza que deseja remover a categoria "${UNCATEGORIZED_LABEL}"? Gravatas nesta categoria manterão esta designação em seus dados, mas a categoria não será uma opção de filtro até ser recriada ou uma nova gravata ser adicionada sem categoria.`
                 : `Tem certeza que deseja remover a categoria "${categoryToDelete}"? As gravatas nesta categoria serão movidas para "${UNCATEGORIZED_LABEL}".`}
             </AlertDialogDescription>
           </AlertDialogHeader>
@@ -660,3 +654,5 @@ export function TieForm({
   );
 }
 
+
+    
