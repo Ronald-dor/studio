@@ -13,6 +13,10 @@ import { useToast } from '@/hooks/use-toast';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { UNCATEGORIZED_LABEL } from '@/lib/types';
 
+// TODO: Firebase Integration: Import your Firebase services
+// import * as tieService from '@/services/tieService';
+// import * as categoryService from '@/services/categoryService';
+
 const initialTiesData: Omit<Tie, 'id'>[] = [
   { name: 'Seda Azul Clássica', quantity: 10, unitPrice: 25, valueInQuantity: 250, category: 'Lisa', imageUrl: 'https://placehold.co/300x400.png' },
   { name: 'Gravata Listrada Vermelha', quantity: 5, unitPrice: 30, valueInQuantity: 150, category: 'Listrada', imageUrl: 'https://placehold.co/300x400.png' },
@@ -50,6 +54,23 @@ export default function HomePage() {
     if (!isClientLoaded || isAuthenticated !== true) return; 
 
     let activeTies: Tie[] = [];
+    // TODO: Firebase Integration: Replace localStorage with Firebase service calls
+    // Example: 
+    // const fetchInitialData = async () => {
+    //   try {
+    //     const fetchedTies = await tieService.getTies();
+    //     setTies(fetchedTies.length > 0 ? fetchedTies : initialTiesData.map(t => ({...t, id: crypto.randomUUID()})));
+    //     
+    //     const fetchedCategories = await categoryService.getCategories();
+    //     // Logic to derive categories from fetchedTies or use fetchedCategories
+    //     // For now, we continue with localStorage logic below as placeholder
+    //   } catch (error) {
+    //      console.error("Failed to fetch data from Firebase:", error);
+    //      // Fallback to initial or localStorage
+    //   }
+    // }
+    // fetchInitialData();
+    
     const storedTiesData = localStorage.getItem('tieTrackTies');
     if (storedTiesData) {
       try {
@@ -100,12 +121,15 @@ export default function HomePage() {
 
   useEffect(() => {
     if (!isClientLoaded || isAuthenticated !== true) return;
+    // TODO: Firebase Integration: This useEffect would be replaced by direct calls to Firebase service on each action (add, update, delete).
+    // Or, if using real-time listeners, this might not be needed or would be simpler.
     localStorage.setItem('tieTrackTies', JSON.stringify(ties));
   }, [ties, isClientLoaded, isAuthenticated]);
 
 
   useEffect(() => {
     if (!isClientLoaded || isAuthenticated !== true) return;
+    // TODO: Firebase Integration: This useEffect would be replaced by direct calls to Firebase service on each action.
     localStorage.setItem('tieTrackCategories', JSON.stringify(categories));
   }, [categories, isClientLoaded, isAuthenticated]);
 
@@ -117,17 +141,14 @@ export default function HomePage() {
     const uncategorizedLabelExistsInState = categories.includes(UNCATEGORIZED_LABEL);
   
     if (hasActualUncategorizedTies && !uncategorizedLabelExistsInState) {
-      // If there are ties that are 'Sem Categoria' but 'Sem Categoria' is not in the categories list, add it.
       setCategories(prevCategories => Array.from(new Set([...prevCategories, UNCATEGORIZED_LABEL])).sort());
     }
-    // We no longer automatically remove UNCATEGORIZED_LABEL if no ties use it.
-    // We no longer automatically add UNCATEGORIZED_LABEL if the categories list is empty by default here.
-    // Manual deletion should be respected. Adding new ties without a category will re-add it via handleFormSubmit.
-    // If all categories are deleted, and no ties are 'UNCATEGORIZED_LABEL', the list can be empty.
   }, [ties, categories, isClientLoaded, isAuthenticated]);
 
 
   const processImageAndGetUrl = async (imageFile: File | null | undefined, currentImageUrl?: string): Promise<string> => {
+    // TODO: Firebase Integration: If using Firebase Storage, this function would upload the image
+    // to Storage and return the public URL.
     if (imageFile) {
       return new Promise((resolve) => {
         const reader = new FileReader();
@@ -141,6 +162,7 @@ export default function HomePage() {
   };
 
   const handleAddCategory = useCallback(async (categoryName: string): Promise<boolean> => {
+    if (!isClientLoaded || isAuthenticated !== true) return false;
     const trimmedName = categoryName.trim();
     if (!trimmedName) {
       toast({ title: "Erro", description: "O nome da categoria não pode estar vazio.", variant: "destructive" });
@@ -150,14 +172,22 @@ export default function HomePage() {
       toast({ title: "Erro", description: `A categoria "${trimmedName}" já existe.`, variant: "destructive" });
       return false;
     }
+
+    // TODO: Firebase Integration: Call categoryService.addCategory(trimmedName)
+    // await categoryService.addCategory(trimmedName);
+
     const newCategories = [...categories, trimmedName].sort();
     setCategories(newCategories);
     toast({ title: "Categoria Adicionada", description: `A categoria "${trimmedName}" foi adicionada.` });
     return true;
-  }, [categories, toast]);
+  }, [categories, toast, isClientLoaded, isAuthenticated]);
 
-  const handleDeleteCategory = useCallback((categoryToDelete: TieCategory) => {
+  const handleDeleteCategory = useCallback(async (categoryToDelete: TieCategory) => {
     if (!isClientLoaded || isAuthenticated !== true) return;
+
+    // TODO: Firebase Integration: Call categoryService.deleteCategory(categoryToDelete)
+    // This would also involve backend logic to update ties belonging to this category.
+    // await categoryService.deleteCategory(categoryToDelete);
 
     let updatedTies = [...ties];
     let toastMessage = "";
@@ -169,10 +199,10 @@ export default function HomePage() {
             }
             return tie;
         });
+        // TODO: Firebase Integration: Update these ties in Firebase as well.
+        // For each updated tie: await tieService.updateTie(tie.id, { category: UNCATEGORIZED_LABEL });
         toastMessage = `A categoria "${categoryToDelete}" foi removida. Gravatas movidas para "${UNCATEGORIZED_LABEL}".`;
     } else {
-        // If deleting UNCATEGORIZED_LABEL, ties remain with that category string in their data.
-        // The category is just removed from the filterable list.
         toastMessage = `A categoria "${UNCATEGORIZED_LABEL}" foi removida dos filtros. Gravatas existentes nesta categoria manterão essa designação.`;
     }
     
@@ -195,7 +225,7 @@ export default function HomePage() {
     
     const tieCategory = data.category && data.category.trim() !== "" ? data.category : UNCATEGORIZED_LABEL;
 
-    const tieData: Omit<Tie, 'id'> = {
+    const tieDataForSave: Omit<Tie, 'id'> = {
       name: data.name!,
       quantity: data.quantity!,
       unitPrice: data.unitPrice!,
@@ -205,15 +235,23 @@ export default function HomePage() {
     };
 
     if (editingTie?.id) {
-      setTies(prevTies => prevTies.map(t => t.id === editingTie.id ? { ...tieData, id: editingTie.id } : t));
+      // TODO: Firebase Integration: Replace with call to tieService.updateTie
+      // const updatedTie = await tieService.updateTie(editingTie.id, {...tieDataForSave, id: editingTie.id});
+      // if (updatedTie) { setTies(prevTies => prevTies.map(t => t.id === editingTie.id ? updatedTie : t)); }
+      setTies(prevTies => prevTies.map(t => t.id === editingTie.id ? { ...tieDataForSave, id: editingTie.id } : t));
       toast({ title: "Gravata Atualizada", description: `${data.name} foi atualizada.` });
     } else {
-      const newTie: Tie = { ...tieData, id: crypto.randomUUID() };
+      // TODO: Firebase Integration: Replace with call to tieService.addTie
+      // const newTieFromBackend = await tieService.addTie(tieDataForSave);
+      // setTies(prevTies => [...prevTies, newTieFromBackend]);
+      const newTie: Tie = { ...tieDataForSave, id: crypto.randomUUID() };
       setTies(prevTies => [...prevTies, newTie]);
       toast({ title: "Gravata Adicionada", description: `${data.name} foi adicionada ao seu inventário.` });
     }
 
     if (!categories.includes(tieCategory)) { 
+      // TODO: Firebase Integration: This might be handled by categoryService or derived from ties.
+      // If categories are explicitly managed: await categoryService.addCategory(tieCategory);
       const newCategories = [...categories, tieCategory].sort();
       setCategories(newCategories);
     }
@@ -227,9 +265,13 @@ export default function HomePage() {
     setIsDialogOpen(true);
   };
 
-  const handleDeleteTie = (id: string) => {
+  const handleDeleteTie = async (id: string) => {
     if (!isClientLoaded || isAuthenticated !== true) return;
     const tieToDelete = ties.find(t => t.id === id);
+    
+    // TODO: Firebase Integration: Replace with call to tieService.deleteTie
+    // await tieService.deleteTie(id);
+
     setTies(prevTies => prevTies.filter(t => t.id !== id));
     if (tieToDelete) {
       toast({ title: "Gravata Removida", description: `${tieToDelete.name} foi removida.`, variant: "destructive" });
@@ -242,6 +284,7 @@ export default function HomePage() {
   };
 
   const handleLogout = () => {
+    // TODO: Firebase Integration: If using Firebase Auth, call auth.signOut()
     localStorage.removeItem('tieTrackAuth');
     setIsAuthenticated(false); 
     router.push('/login'); 
@@ -356,3 +399,4 @@ export default function HomePage() {
     </div>
   );
 }
+
