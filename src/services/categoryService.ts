@@ -1,35 +1,75 @@
-// Placeholder for Firebase Category service
-import type { TieCategory } from '@/lib/types';
-// import { db } from '@/lib/firebase'; // Firestore instance
-// import { collection, getDocs, addDoc, deleteDoc, doc, setDoc, query, where } from 'firebase/firestore';
 
-// It's common to store categories as a separate collection or derive them from ties.
-// For simplicity, let's assume a separate collection for now.
-// const categoriesCollectionRef = collection(db, 'categories');
+import type { TieCategory } from '@/lib/types';
+import { db } from '@/lib/firebase';
+import { doc, getDoc, setDoc, updateDoc, arrayUnion, arrayRemove, Timestamp } from 'firebase/firestore';
+import { UNCATEGORIZED_LABEL } from '@/lib/types';
+
+const tieCategoriesDocRef = doc(db, 'app_config', 'tieCategories');
+
+// Default categories to seed if the document doesn't exist.
+const seedDefaultCategories: TieCategory[] = ['Lisa', 'Listrada', 'Pontilhada'];
+
 
 export async function getCategories(): Promise<TieCategory[]> {
-  console.log("Placeholder: Fetching categories from backend");
-  // TODO: Implement fetching categories from Firestore
-  // Example:
-  // const categorySnapshot = await getDocs(categoriesCollectionRef);
-  // const categories = categorySnapshot.docs.map(doc => doc.id as TieCategory); // Assuming doc.id is category name
-  // return categories;
-  return []; // Return empty array or mock data
+  try {
+    const docSnap = await getDoc(tieCategoriesDocRef);
+    if (docSnap.exists()) {
+      const data = docSnap.data();
+      return data.list || [];
+    } else {
+      // Optional: Seed categories if document doesn't exist
+      // await setDoc(tieCategoriesDocRef, { list: seedDefaultCategories, createdAt: Timestamp.now() });
+      // return seedDefaultCategories;
+      // For now, if it doesn't exist, it means no categories have been explicitly saved yet.
+      return [];
+    }
+  } catch (error) {
+    console.error("Error fetching categories: ", error);
+    throw error;
+  }
 }
 
 export async function addCategory(categoryName: string): Promise<void> {
-  console.log("Placeholder: Adding category to backend", categoryName);
-  // TODO: Implement adding category to Firestore
-  // Example:
-  // const categoryDoc = doc(db, 'categories', categoryName); // Using categoryName as ID
-  // await setDoc(categoryDoc, { name: categoryName }); // Or some other structure
+  if (categoryName === UNCATEGORIZED_LABEL) { // Prevent adding "Sem Categoria" as a managed category
+    console.warn("Attempted to add UNCATEGORIZED_LABEL as a managed category.");
+    return;
+  }
+  try {
+    const docSnap = await getDoc(tieCategoriesDocRef);
+    if (docSnap.exists()) {
+      await updateDoc(tieCategoriesDocRef, { 
+        list: arrayUnion(categoryName),
+        updatedAt: Timestamp.now()
+      });
+    } else {
+      await setDoc(tieCategoriesDocRef, { 
+        list: [categoryName],
+        createdAt: Timestamp.now()
+      });
+    }
+  } catch (error) {
+    console.error("Error adding category: ", error);
+    throw error;
+  }
 }
 
 export async function deleteCategory(categoryName: string): Promise<void> {
-  console.log("Placeholder: Deleting category from backend", categoryName);
-  // TODO: Implement deleting category from Firestore
-  // Example:
-  // const categoryDoc = doc(db, 'categories', categoryName);
-  // await deleteDoc(categoryDoc);
-  // Note: You'll also need to handle updating ties that belong to this category on the backend.
+   if (categoryName === UNCATEGORIZED_LABEL) {
+    // "Sem Categoria" is not stored in the category list in Firestore, it's a derived concept.
+    // Or, if we allow its "deletion" from UI, it means it won't be a filter, but ties might still have it.
+    console.warn("UNCATEGORIZED_LABEL cannot be deleted from Firestore category list as it's not explicitly stored there.");
+    return; 
+  }
+  try {
+    const docSnap = await getDoc(tieCategoriesDocRef);
+    if (docSnap.exists()) {
+      await updateDoc(tieCategoriesDocRef, { 
+        list: arrayRemove(categoryName),
+        updatedAt: Timestamp.now() 
+      });
+    }
+  } catch (error) {
+    console.error("Error deleting category: ", error);
+    throw error;
+  }
 }
