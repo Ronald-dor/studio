@@ -2,13 +2,13 @@
 "use client";
 
 import React, { useState, useEffect, useCallback } from 'react';
-// import { useRouter } from 'next/navigation'; // No longer needed for login
+import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { TieList } from '@/components/TieList';
 import { AddTieDialog } from '@/components/AddTieDialog';
 import type { Tie, TieFormData, TieCategory } from '@/lib/types';
-import { PlusCircle, Shirt, Search } from 'lucide-react'; // LogOut removed
+import { PlusCircle, Shirt, LogOut, Search } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { UNCATEGORIZED_LABEL } from '@/lib/types';
@@ -23,8 +23,8 @@ const defaultCategories: TieCategory[] = ['Lisa', 'Listrada', 'Pontilhada'];
 
 
 export default function HomePage() {
-  // const router = useRouter(); // No longer needed for login
-  // const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null); // Login related state removed
+  const router = useRouter();
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
   const [isClientLoaded, setIsClientLoaded] = useState(false); 
 
   const [ties, setTies] = useState<Tie[]>([]);
@@ -37,14 +37,19 @@ export default function HomePage() {
   const [currentYear, setCurrentYear] = useState<number | null>(null);
 
   useEffect(() => {
-    // Directly load data, no auth check
+    const authStatus = localStorage.getItem('tieTrackAuth') === 'true';
+    setIsAuthenticated(authStatus);
     setIsClientLoaded(true); 
     setCurrentYear(new Date().getFullYear());
-  }, []);
+
+    if (!authStatus) {
+      router.push('/login');
+    }
+  }, [router]);
 
 
   useEffect(() => {
-    if (!isClientLoaded) return; 
+    if (!isClientLoaded || isAuthenticated !== true) return; 
 
     let activeTies: Tie[] = [];
     const storedTiesData = localStorage.getItem('tieTrackTies');
@@ -92,23 +97,24 @@ export default function HomePage() {
       
       setCategories(Array.from(initialSetupCategoriesSet).sort());
     }
-  }, [isClientLoaded]);
+  }, [isClientLoaded, isAuthenticated]);
 
 
   useEffect(() => {
-    if (!isClientLoaded) return;
+    if (!isClientLoaded || isAuthenticated !== true) return;
     localStorage.setItem('tieTrackTies', JSON.stringify(ties));
-  }, [ties, isClientLoaded]);
+  }, [ties, isClientLoaded, isAuthenticated]);
 
 
   useEffect(() => {
-    if (!isClientLoaded) return;
+    if (!isClientLoaded || isAuthenticated !== true) return;
     localStorage.setItem('tieTrackCategories', JSON.stringify(categories));
-  }, [categories, isClientLoaded]);
+  }, [categories, isClientLoaded, isAuthenticated]);
 
 
   useEffect(() => {
-    if (!isClientLoaded) return;
+    if (!isClientLoaded || isAuthenticated !== true) return;
+
     const hasUncategorizedTies = ties.some(tie => tie.category === UNCATEGORIZED_LABEL);
     let categoriesStateChanged = false;
     let newCategoriesSnapshot = [...categories];
@@ -139,7 +145,7 @@ export default function HomePage() {
         setCategories(sortedNewCategories);
       }
     }
-  }, [ties, categories, isClientLoaded]);
+  }, [ties, categories, isClientLoaded, isAuthenticated]);
 
 
   const processImageAndGetUrl = async (imageFile: File | null | undefined, currentImageUrl?: string): Promise<string> => {
@@ -247,13 +253,30 @@ export default function HomePage() {
     setIsDialogOpen(true);
   };
 
-  // handleLogout removed
+  const handleLogout = () => {
+    localStorage.removeItem('tieTrackAuth');
+    setIsAuthenticated(false);
+    router.push('/login');
+    toast({ title: "Logout Realizado", description: "Você foi desconectado." });
+  };
 
-  if (!isClientLoaded) { // Simplified loading check
+
+  if (!isClientLoaded) {
     return (
       <div className="flex flex-col justify-center items-center min-h-screen bg-background p-4">
         <Shirt size={64} className="text-primary mb-6" />
         <p className="text-muted-foreground">Carregando aplicação...</p>
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) { // Check if authenticated *after* client is loaded
+    // This state is usually brief as useEffect above would have redirected.
+    // Can show a specific message or a loader.
+    return (
+      <div className="flex flex-col justify-center items-center min-h-screen bg-background p-4">
+        <Shirt size={64} className="text-primary mb-6" />
+        <p className="text-muted-foreground">Redirecionando para o login...</p>
       </div>
     );
   }
@@ -297,12 +320,16 @@ export default function HomePage() {
             <Button onClick={openAddDialog} variant="default" className="w-full sm:w-auto">
               <PlusCircle size={20} className="mr-2" /> Adicionar Nova Gravata
             </Button>
-            {/* Logout Button Removed */}
+            {isAuthenticated && (
+              <Button onClick={handleLogout} variant="outline" className="w-full sm:w-auto">
+                <LogOut size={20} className="mr-2" /> Sair
+              </Button>
+            )}
           </div>
         </div>
       </header>
 
-      {isClientLoaded && ( // Main content only renders after client is loaded
+      {isClientLoaded && isAuthenticated && ( // Main content only renders if client loaded and authenticated
         <main className="container mx-auto p-4 md:p-8">
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
             <TabsList className="flex flex-wrap justify-start gap-2 mb-6 pb-2 border-b border-border">
@@ -333,7 +360,7 @@ export default function HomePage() {
         </main>
       )}
       
-      {isClientLoaded && ( // Dialog only renders after client is loaded
+      {isClientLoaded && isAuthenticated && ( // Dialog only renders if client loaded and authenticated
         <AddTieDialog
             open={isDialogOpen}
             onOpenChange={setIsDialogOpen}
