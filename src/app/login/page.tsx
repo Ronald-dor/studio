@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState, useEffect, FormEvent } from 'react';
@@ -6,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
-import { Shirt, LogIn } from 'lucide-react'; // LogIn icon
+import { Shirt, User, Lock } from 'lucide-react'; // User and Lock icons
 import { useToast } from '@/hooks/use-toast';
 
 const USERNAME = "Rsgravataria";
@@ -19,27 +20,18 @@ export default function LoginPage() {
   const [error, setError] = useState('');
   const { toast } = useToast();
   
-  const [currentYear, setCurrentYear] = useState<number | null>(null);
-  const [authStatus, setAuthStatus] = useState<'checking' | 'authenticated' | 'unauthenticated'>('checking');
-
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
 
   useEffect(() => {
-    setCurrentYear(new Date().getFullYear()); // Set year on client
-    
-    const storedAuth = localStorage.getItem('tieTrackAuth');
-    if (storedAuth === 'true') {
-      setAuthStatus('authenticated');
-    } else {
-      setAuthStatus('unauthenticated');
-    }
-  }, []);
-
-  useEffect(() => {
-    if (authStatus === 'authenticated') {
+    // Check auth status on mount
+    const auth = localStorage.getItem('tieTrackAuth');
+    if (auth === 'true') {
+      setIsAuthenticated(true);
       router.push('/');
+    } else {
+      setIsAuthenticated(false);
     }
-  }, [authStatus, router]);
-
+  }, [router]);
 
   const handleLogin = async (event: FormEvent) => {
     event.preventDefault();
@@ -51,7 +43,8 @@ export default function LoginPage() {
         title: "Login Bem-sucedido!",
         description: "Redirecionando para o painel...",
       });
-      setAuthStatus('authenticated'); // This will trigger the redirect effect
+      setIsAuthenticated(true);
+      router.push('/'); 
     } else {
       setError("Nome de usuário ou senha inválidos.");
       toast({
@@ -62,16 +55,18 @@ export default function LoginPage() {
     }
   };
 
-  if (authStatus === 'checking') {
+  if (isAuthenticated === null) {
     return (
       <div className="flex flex-col justify-center items-center min-h-screen bg-background p-4">
         <Shirt size={64} className="text-primary mb-6" />
-        <p className="text-muted-foreground">Verificando autenticação...</p>
+        <p className="text-muted-foreground">Carregando...</p>
       </div>
     );
   }
   
-  if (authStatus === 'authenticated') {
+  if (isAuthenticated === true) {
+     // This case should ideally be handled by the redirect in useEffect,
+     // but as a fallback:
      return (
       <div className="flex flex-col justify-center items-center min-h-screen bg-background p-4">
         <Shirt size={64} className="text-primary mb-6" />
@@ -82,60 +77,57 @@ export default function LoginPage() {
 
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen bg-gradient-to-br from-background to-secondary/30 p-4" suppressHydrationWarning={true}>
-      <header className="absolute top-0 left-0 right-0 py-6 px-4 md:px-8">
-        <div className="container mx-auto flex items-center space-x-2">
-          <Shirt size={32} className="text-primary" />
-          <h1 className="text-3xl font-bold text-primary">TieTrack</h1>
-        </div>
-      </header>
-      
-      <Card className="w-full max-w-md shadow-2xl">
-        <CardHeader className="text-center">
-          <CardTitle className="text-2xl flex items-center justify-center">
-            <LogIn size={24} className="mr-2 text-primary"/> Acessar TieTrack
+    <div className="flex flex-col items-center justify-center min-h-screen bg-background p-4" suppressHydrationWarning={true}>
+      <Card className="w-full max-w-sm shadow-xl">
+        <CardHeader className="text-center space-y-4 pt-8">
+          <Shirt size={48} className="mx-auto text-primary" />
+          <CardTitle className="text-2xl font-bold">
+            TieTrack Login
           </CardTitle>
-          <CardDescription>Entre com suas credenciais para gerenciar seu inventário.</CardDescription>
+          <CardDescription>Acesse seu inventário de gravatas.</CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className="pt-2 pb-6 px-6">
           <form onSubmit={handleLogin} className="space-y-6">
             <div className="space-y-2">
               <Label htmlFor="username">Nome de Usuário</Label>
-              <Input
-                id="username"
-                type="text"
-                placeholder="Nome de Usuário"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                required
-                className="text-base md:text-sm"
-              />
+              <div className="relative">
+                <User className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  id="username"
+                  type="text"
+                  placeholder="Nome de Usuário"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  required
+                  className="pl-10 text-base md:text-sm"
+                />
+              </div>
             </div>
             <div className="space-y-2">
               <Label htmlFor="password">Senha</Label>
-              <Input
-                id="password"
-                type="password"
-                placeholder="Senha"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-                className="text-base md:text-sm"
-              />
+              <div className="relative">
+                <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  id="password"
+                  type="password"
+                  placeholder="Senha"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  required
+                  className="pl-10 text-base md:text-sm"
+                />
+              </div>
             </div>
-            {error && <p className="text-sm font-medium text-destructive">{error}</p>}
-            <Button type="submit" className="w-full" variant="default">
+            {error && <p className="text-sm font-medium text-destructive text-center">{error}</p>}
+            <Button type="submit" className="w-full bg-primary hover:bg-primary/90 text-primary-foreground" variant="default">
               Entrar
             </Button>
           </form>
         </CardContent>
-        <CardFooter className="text-center text-xs text-muted-foreground">
-          <p>Lembre-se: Nome de usuário é <strong>Rsgravataria</strong> e senha é <strong>Confioemvoce</strong>.</p>
-        </CardFooter>
       </Card>
 
-      <footer className="absolute bottom-0 left-0 right-0 py-6 text-center text-sm text-muted-foreground">
-        © {currentYear || new Date().getFullYear()} TieTrack. Mantenha sua coleção organizada.
+      <footer className="py-8 text-center text-sm text-muted-foreground">
+        © 2025 TieTrack. Todos os direitos reservados.
       </footer>
     </div>
   );
