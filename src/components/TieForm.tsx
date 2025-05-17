@@ -171,9 +171,6 @@ export function TieForm({
         const newDefaultCat = remainingCats.length > 0 
                                 ? remainingCats[0] 
                                 : UNCATEGORIZED_LABEL;
-        // Se a categoria ativa for "Sem Categoria" e ela for excluída,
-        // e não houver outras categorias, o select pode ficar com UNCATEGORIZED_LABEL mesmo que não exista mais na lista
-        // o que é aceitável, pois ao salvar, se for UNCATEGORIZED_LABEL, ela será recriada.
         form.setValue('category', newDefaultCat);
       }
       setCategoryToDelete(null);
@@ -288,7 +285,11 @@ export function TieForm({
         }
         
         const stream = await navigator.mediaDevices.getUserMedia({
-          video: { deviceId: { exact: deviceIdToUse } }
+          video: { 
+            deviceId: { exact: deviceIdToUse },
+            width: { ideal: 4096 }, // Request ideal 4K width
+            height: { ideal: 2160 } // Request ideal 4K height
+          }
         });
         setHasCameraPermission(true);
         setWebcamStream(stream);
@@ -335,12 +336,13 @@ export function TieForm({
     if (videoRef.current && canvasRef.current && webcamStream) {
       const video = videoRef.current;
       const canvas = canvasRef.current;
+      // Set canvas dimensions to the actual video stream dimensions for full resolution
       canvas.width = video.videoWidth;
       canvas.height = video.videoHeight;
       const context = canvas.getContext('2d');
       if (context) {
         context.drawImage(video, 0, 0, canvas.width, canvas.height);
-        const dataUrl = canvas.toDataURL('image/webp'); 
+        const dataUrl = canvas.toDataURL('image/webp'); // WebP for good quality and compression
         setCapturedImageDataUrl(dataUrl);
       }
     } else {
@@ -656,3 +658,5 @@ export function TieForm({
 
 
     
+
+      
