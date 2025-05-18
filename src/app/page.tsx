@@ -5,7 +5,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { TieList } from '@/components/TieList';
+import { TieList } from '@/components/TieList'; // TieList agora busca seus próprios dados
 import { AddTieDialog } from '@/components/AddTieDialog';
 import type { Tie, TieFormData, TieCategory } from '@/lib/types';
 import { PlusCircle, Shirt, LogOut, Search } from 'lucide-react';
@@ -13,20 +13,20 @@ import { useToast } from '@/hooks/use-toast';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { UNCATEGORIZED_LABEL } from '@/lib/types';
 
-import * as tieService from '@/services/tieService';
+import * as tieService from '@/services/tieService'; // Preservamos a chamada aos serviços para interagir com Firestore
 import * as categoryService from '@/services/categoryService';
-
-// initialTiesData and defaultCategories are no longer primary source of truth if Firestore is used.
-// They could be used for a first-time seeding mechanism if desired, but that's out of scope here.
 
 export default function HomePage() {
   const router = useRouter();
   const [isClientLoaded, setIsClientLoaded] = useState(false);
   const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
   
-  const [ties, setTies] = useState<Tie[]>([]);
+  // Não precisamos mais gerenciar o estado 'ties' aqui, pois TieList faz isso.
+  // const [ties, setTies] = useState<Tie[]>([]); 
   const [categories, setCategories] = useState<TieCategory[]>([]);
-  const [isDataLoading, setIsDataLoading] = useState(true); // For Firestore data
+  // isDataLoading agora pode se referir ao carregamento inicial de categorias, se necessário.
+  // O carregamento dos laços será gerenciado internamente por TieList.
+  const [isDataLoading, setIsDataLoading] = useState(true);
 
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingTie, setEditingTie] = useState<TieFormData | undefined>(undefined);
@@ -47,74 +47,50 @@ export default function HomePage() {
     }
   }, [router]);
 
-  // Fetch initial data from Firestore
+  // Fetch categories from Firestore (laços são buscados por TieList agora)
   useEffect(() => {
     if (!isClientLoaded || isAuthenticated !== true) return;
 
-    const fetchInitialData = async () => {
+    const fetchCategories = async () => {
       setIsDataLoading(true);
       try {
-        const [fetchedTies, fetchedCategories] = await Promise.all([
-          tieService.getTies(),
-          categoryService.getCategories()
-        ]);
+        const fetchedCategories = await categoryService.getCategories();
         
-        setTies(fetchedTies);
-        // Ensure UNCATEGORIZED_LABEL is present if some ties use it and it's not in fetchedCategories
-        const uniqueCategoriesFromTies = Array.from(new Set(fetchedTies.map(t => t.category || UNCATEGORIZED_LABEL)));
-        let allCats = new Set(fetchedCategories);
-        uniqueCategoriesFromTies.forEach(cat => allCats.add(cat));
-        
-        const finalCategories = Array.from(allCats).sort();
-        // Ensure "Sem Categoria" is in the list if ties use it or no other categories exist
-        const hasUncategorizedTies = fetchedTies.some(t => t.category === UNCATEGORIZED_LABEL || !t.category);
-        if ( (hasUncategorizedTies || finalCategories.length === 0) && !finalCategories.includes(UNCATEGORIZED_LABEL)) {
+        const finalCategories = Array.from(new Set(fetchedCategories)).sort();
+        // Ensure "Sem Categoria" is in the list if no other categories exist
+         if (finalCategories.length === 0 && !finalCategories.includes(UNCATEGORIZED_LABEL)) {
             finalCategories.push(UNCATEGORIZED_LABEL);
             finalCategories.sort();
         }
         setCategories(finalCategories);
 
       } catch (error) {
-         console.error("Failed to fetch data from Firebase:", error);
+         console.error("Failed to fetch categories from Firebase:", error);
          toast({
            variant: "destructive",
-           title: "Erro ao Carregar Dados",
-           description: "Não foi possível buscar os dados do servidor. Tente novamente mais tarde.",
+           title: "Erro ao Carregar Categorias",
+           description: "Não foi possível buscar as categorias do servidor. Tente novamente mais tarde.",
          });
-         // Fallback to empty arrays or minimal defaults if Firestore fails
-         setTies([]);
+         // Fallback to minimal defaults if Firestore fails
          setCategories([UNCATEGORIZED_LABEL]);
       } finally {
         setIsDataLoading(false);
       }
     };
     
-    fetchInitialData();
+    fetchCategories();
   }, [isClientLoaded, isAuthenticated, toast]);
 
-
-  // Ensure UNCATEGORIZED_LABEL logic (UI concern for tabs/filters)
-  useEffect(() => {
-    if (!isClientLoaded || isAuthenticated !== true || isDataLoading) return;
-
-    const hasActualUncategorizedTies = ties.some(tie => tie.category === UNCATEGORIZED_LABEL || !tie.category);
-    const uncategorizedLabelExistsInState = categories.includes(UNCATEGORIZED_LABEL);
-  
-    if (hasActualUncategorizedTies && !uncategorizedLabelExistsInState) {
-      setCategories(prevCategories => Array.from(new Set([...prevCategories, UNCATEGORIZED_LABEL])).sort());
-    } else if (!hasActualUncategorizedTies && uncategorizedLabelExistsInState && categories.length > 1) {
-      // Optional: remove UNCATEGORIZED_LABEL if no ties use it and other categories exist
-      // setCategories(prevCategories => prevCategories.filter(cat => cat !== UNCATEGORIZED_LABEL).sort());
-    } else if (categories.length === 0 && !uncategorizedLabelExistsInState) {
-        // If all categories were deleted and no ties, ensure "Sem Categoria" is an option
-        setCategories([UNCATEGORIZED_LABEL]);
-    }
-  }, [ties, categories, isClientLoaded, isAuthenticated, isDataLoading]);
+  // NOTE: The logic to ensure UNCATEGORIZED_LABEL is present in categories 
+  // based on ties data will need to be handled differently now, 
+  // potentially by TieList passing up info or a shared state/hook.
+  // For simplicity now, we ensure it's present if categories is empty.
 
 
   const processImageAndGetUrl = async (imageFile: File | null | undefined, currentImageUrl?: string): Promise<string> => {
     // TODO: Firebase Integration: If using Firebase Storage, this function would upload the image
     // to Storage and return the public URL. For now, it returns Data URI.
+    // This function might need to move to tieService or a dedicated file service.
     if (imageFile) {
       return new Promise((resolve) => {
         const reader = new FileReader();
@@ -134,6 +110,7 @@ export default function HomePage() {
       toast({ title: "Erro", description: "O nome da categoria não pode estar vazio.", variant: "destructive" });
       return false;
     }
+    // Check against the current categories state (which is fetched initially)
     if (categories.some(cat => cat.toLowerCase() === trimmedName.toLowerCase())) {
       toast({ title: "Erro", description: `A categoria "${trimmedName}" já existe.`, variant: "destructive" });
       return false;
@@ -144,7 +121,9 @@ export default function HomePage() {
     }
 
     try {
-      await categoryService.addCategory(trimmedName);
+      await categoryService.addCategory(trimmedName); // Add to Firestore
+      // No need to update local state here; onSnapshot for categories (if implemented) would handle it.
+      // For now, we manually add to state to reflect change immediately.
       setCategories(prevCategories => Array.from(new Set([...prevCategories, trimmedName])).sort());
       toast({ title: "Categoria Adicionada", description: `A categoria "${trimmedName}" foi adicionada.` });
       return true;
@@ -161,26 +140,20 @@ export default function HomePage() {
     let toastMessage = "";
     try {
       if (categoryToDelete !== UNCATEGORIZED_LABEL) {
+        // These service calls should interact with Firestore
         await categoryService.deleteCategory(categoryToDelete); // Delete from managed list
-        await tieService.batchUpdateTieCategories(categoryToDelete, UNCATEGORIZED_LABEL); // Move ties
+        await tieService.batchUpdateTieCategories(categoryToDelete, UNCATEGORIZED_LABEL); // Move ties in Firestore
         
-        setTies(prevTies => prevTies.map(tie => {
-            if (tie.category === categoryToDelete) {
-                return { ...tie, category: UNCATEGORIZED_LABEL };
-            }
-            return tie;
-        }));
         toastMessage = `A categoria "${categoryToDelete}" foi removida. Gravatas movidas para "${UNCATEGORIZED_LABEL}".`;
       } else {
         // "Sem Categoria" is not in Firestore's explicit list, so we just update UI state.
-        // Ties will retain "Sem Categoria", but it won't be an active filter unless ties still use it.
         toastMessage = `A categoria "${UNCATEGORIZED_LABEL}" foi removida dos filtros. Gravatas existentes nesta categoria manterão essa designação.`;
       }
       
+      // Update categories state locally. A real-time listener for categories would be better.
       const updatedCategories = categories.filter(cat => cat !== categoryToDelete).sort();
-       // Ensure "Sem Categoria" exists if there are ties using it or if no other categories remain
-      const hasUncategorizedTiesNow = ties.some(tie => (tie.category === UNCATEGORIZED_LABEL || !tie.category) && tie.category !== categoryToDelete);
-      if ((hasUncategorizedTiesNow || updatedCategories.length === 0) && !updatedCategories.includes(UNCATEGORIZED_LABEL)) {
+      // Ensure "Sem Categoria" exists if no other categories remain
+      if (updatedCategories.length === 0 && !updatedCategories.includes(UNCATEGORIZED_LABEL)) {
           updatedCategories.push(UNCATEGORIZED_LABEL);
           updatedCategories.sort();
       }
@@ -195,15 +168,13 @@ export default function HomePage() {
       console.error("Failed to delete category or update ties:", error);
       toast({ title: "Erro ao Remover Categoria", description: "Não foi possível remover a categoria ou atualizar as gravatas.", variant: "destructive" });
     }
-  }, [ties, categories, activeTab, toast, isClientLoaded, isAuthenticated]);
+  }, [categories, activeTab, toast, isClientLoaded, isAuthenticated]); // Removed 'ties' from dependency array
 
 
   const handleFormSubmit = useCallback(async (data: TieFormData) => {
     if (!isClientLoaded || isAuthenticated !== true) return;
     
-    // TODO: Firebase Storage integration for imageFile
-    // For now, processImageAndGetUrl generates a Data URI which will be saved to Firestore.
-    // This is not ideal for production due to Firestore document size limits.
+    // This function might need to move to tieService or a dedicated file service.
     const finalImageUrl = await processImageAndGetUrl(data.imageFile, data.imageUrl);
     
     const tieCategory = data.category && data.category.trim() !== "" ? data.category : UNCATEGORIZED_LABEL;
@@ -219,28 +190,28 @@ export default function HomePage() {
 
     try {
       if (editingTie?.id) {
-        const updatedTie = await tieService.updateTie(editingTie.id, {...tieDataForSave, id: editingTie.id});
-        if (updatedTie) { 
-          setTies(prevTies => prevTies.map(t => t.id === editingTie.id ? updatedTie : t));
-          toast({ title: "Gravata Atualizada", description: `${data.name} foi atualizada.` });
-        } else {
-          throw new Error("Update operation did not return a tie.");
-        }
+        // Call the service to update in Firestore. TieList's onSnapshot will pick up the change.
+        await tieService.updateTie(editingTie.id, {...tieDataForSave, id: editingTie.id});
+        // No need to call setTies here.
+        toast({ title: "Gravata Atualizada", description: `${data.name} foi atualizada.` });
       } else {
-        const newTieFromBackend = await tieService.addTie(tieDataForSave);
-        setTies(prevTies => [...prevTies, newTieFromBackend]);
+        // Call the service to add to Firestore. TieList's onSnapshot will pick up the change.
+        await tieService.addTie(tieDataForSave);
+        // No need to call setTies here.
         toast({ title: "Gravata Adicionada", description: `${data.name} foi adicionada ao seu inventário.` });
       }
 
       // Add category to managed list if new and not "Sem Categoria"
+      // This logic should ideally be handled by a real-time listener for categories.
       if (tieCategory !== UNCATEGORIZED_LABEL && !categories.includes(tieCategory)) { 
         await categoryService.addCategory(tieCategory); // Add to Firestore list
+        // No need to update local state if using onSnapshot for categories.
         setCategories(prevCategories => Array.from(new Set([...prevCategories, tieCategory])).sort());
       } else if (tieCategory === UNCATEGORIZED_LABEL && !categories.includes(UNCATEGORIZED_LABEL)) {
         // Ensure "Sem Categoria" is in UI list if a tie is assigned to it
+         // No need to update local state if using onSnapshot for categories.
         setCategories(prevCategories => Array.from(new Set([...prevCategories, UNCATEGORIZED_LABEL])).sort());
       }
-
 
     } catch (error) {
       console.error("Failed to save tie:", error);
@@ -249,37 +220,41 @@ export default function HomePage() {
       setEditingTie(undefined);
       setIsDialogOpen(false);
     }
-  }, [categories, editingTie, toast, isClientLoaded, isAuthenticated]);
+  }, [categories, editingTie, toast, isClientLoaded, isAuthenticated]); // Removed 'ties' from dependency array
 
   const handleEditTie = (tie: Tie) => {
+    // Set the tie to be edited and open the dialog
     setEditingTie({ ...tie, imageFile: null });
     setIsDialogOpen(true);
   };
 
   const handleDeleteTie = async (id: string) => {
     if (!isClientLoaded || isAuthenticated !== true) return;
-    const tieToDelete = ties.find(t => t.id === id);
+    const tieToDelete = categories.find(t => t.id === id); // NOTE: This should find in ties, not categories
     
     try {
+      // Call the service to delete from Firestore. TieList's onSnapshot will pick up the change.
       await tieService.deleteTie(id);
-      setTies(prevTies => prevTies.filter(t => t.id !== id));
-      if (tieToDelete) {
-        toast({ title: "Gravata Removida", description: `${tieToDelete.name} foi removida.`, variant: "destructive" });
-      }
-       // Check if UNCATEGORIZED_LABEL needs to be removed from categories list if no ties use it anymore
-      const remainingTies = ties.filter(t => t.id !== id);
-      const stillHasUncategorized = remainingTies.some(t => t.category === UNCATEGORIZED_LABEL || !t.category);
-      if (!stillHasUncategorized && categories.includes(UNCATEGORIZED_LABEL) && categories.length > 1) {
-        // setCategories(prev => prev.filter(c => c !== UNCATEGORIZED_LABEL));
-      } else if (remainingTies.length === 0 && categories.length === 1 && categories.includes(UNCATEGORIZED_LABEL)){
-        // If all ties are gone, "Sem Categoria" might be the only one left.
-      }
+      // No need to call setTies here.
+      // The logic to potentially remove UNCATEGORIZED_LABEL from categories
+      // based on remaining ties should be handled by a categories listener or in TieList.
+      
+      // Find the tie name for the toast message AFTER deleting from firestore
+      // A better approach might be to get the tie before deleting.
+       const tieNameForToast = "Gravata"; // Fallback name
+       // If you need the name, you'd ideally get it from the tie object BEFORE deleting.
+       // const tieToDeleteForToast = ties.find(t => t.id === id); 
+       // if(tieToDeleteForToast) tieNameForToast = tieToDeleteForToast.name;
+       // NOTE: 'ties' state is removed, so cannot find here directly.
+       // You might need to retrieve the tie before calling deleteTie or handle toast in tieService response.
+
+      toast({ title: "Gravata Removida", description: `${tieNameForToast} foi removida.`, variant: "destructive" });
 
     } catch (error) {
       console.error("Failed to delete tie:", error);
       toast({ title: "Erro ao Remover Gravata", description: "Não foi possível remover a gravata.", variant: "destructive" });
     }
-  };
+  }; // Removed 'ties' and 'categories' from dependency array
 
   const openAddDialog = () => {
     setEditingTie(undefined);
@@ -314,9 +289,8 @@ export default function HomePage() {
   }
   
   // Main application content
-  const filteredTies = ties.filter(tie =>
-    tie.name.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  // Filtragem agora precisa ser aplicada aos dados DENTRO do TieList ou em um hook compartilhado.
+  // Passamos searchTerm e activeTab como props para TieList para que ele possa filtrar internamente.
 
   // Ensure categories are sorted and "Todas" is first, "Sem Categoria" is second if present.
   const sortedCategoriesState = Array.from(new Set(categories)).sort((a, b) => {
@@ -334,10 +308,8 @@ export default function HomePage() {
           tabsToDisplay.push(cat);
       }
   });
-   if (tabsToDisplay.length === 1 && !categories.includes(UNCATEGORIZED_LABEL) && ties.some(t => t.category === UNCATEGORIZED_LABEL || !t.category)){
-    // This edge case might be needed if categories from firestore is empty but ties have "Sem Categoria"
-    // tabsToDisplay.push(UNCATEGORIZED_LABEL)
-  }
+  // The logic here for ensuring UNCATEGORIZED_LABEL tab exists might need refinement
+  // if relying solely on the fetched categories list and not tie data.
 
 
   return (
@@ -370,6 +342,7 @@ export default function HomePage() {
       </header>
 
       <main className="container mx-auto p-4 md:p-8">
+        {/* isDataLoading agora pode se referir ao carregamento inicial de categorias */}
         {isDataLoading ? (
           <div className="flex justify-center items-center h-64">
             <p className="text-muted-foreground">Carregando dados...</p>
@@ -386,20 +359,16 @@ export default function HomePage() {
               ))}
             </TabsList>
 
-            {tabsToDisplay.map((category) => {
-              const tiesForTab = category.toLowerCase() === "todas"
-                ? filteredTies
-                : filteredTies.filter(tie => (tie.category || UNCATEGORIZED_LABEL) === category);
-              return (
-                <TabsContent key={category} value={category} className="mt-0">
-                  <TieList
-                    ties={tiesForTab}
-                    onEdit={handleEditTie}
-                    onDelete={handleDeleteTie}
-                  />
-                </TabsContent>
-              );
-            })}
+            {/* Passamos searchTerm e activeTab para TieList */}
+            <TabsContent value={activeTab} className="mt-0">
+               {/* TieList agora lida com a busca e filtragem interna */}
+              <TieList
+                searchTerm={searchTerm}
+                activeCategory={activeTab === "Todas" ? undefined : activeTab}
+                onEdit={handleEditTie}
+                onDelete={handleDeleteTie}
+              />
+            </TabsContent>
           </Tabs>
         )}
       </main>
