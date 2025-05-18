@@ -7,13 +7,13 @@ import { getAuth } from "firebase/auth";
 // Obtain this from your Firebase project console:
 // Project settings > General > Your apps > Web app > Firebase SDK snippet > Config
 const firebaseConfig = {
-  apiKey: "YOUR_API_KEY",
-  authDomain: "YOUR_AUTH_DOMAIN",
-  projectId: "YOUR_PROJECT_ID",
-  storageBucket: "YOUR_STORAGE_BUCKET",
-  messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
-  appId: "YOUR_APP_ID",
-  measurementId: "YOUR_MEASUREMENT_ID" // Optional
+  apiKey: "AIzaSyAtOw05Qm7WcJrsHJUcJNUNmdoDfhzJYqQ",
+  authDomain: "tietrack-71510.firebaseapp.com",
+  projectId: "tietrack",
+  storageBucket: "tietrack.firebasestorage.app",
+  messagingSenderId: "230701156418",
+  appId: "1:230701156418:web:82720ca156abbe233a05db"
+  
 };
 
 // Initialize Firebase
