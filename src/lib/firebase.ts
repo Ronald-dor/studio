@@ -5,13 +5,14 @@ import { getFirestore, Firestore } from 'firebase/firestore';
 
 // IMPORTANTE: Substitua estas configurações pelas configurações REAIS do seu projeto Firebase!
 const firebaseConfig = {
-  apiKey: "YOUR_API_KEY", // Substitua pelo seu apiKey
-  authDomain: "YOUR_AUTH_DOMAIN", // Substitua
-  projectId: "YOUR_PROJECT_ID", // Substitua
-  storageBucket: "YOUR_STORAGE_BUCKET", // Substitua
-  messagingSenderId: "YOUR_MESSAGING_SENDER_ID", // Substitua
-  appId: "YOUR_APP_ID" // Substitua
+  apiKey: "AIzaSyAtOw05Qm7WcJrsHJUcJNUNmdoDfhzJYqQ",
+  authDomain: "tietrack-71510.firebaseapp.com",
+  projectId: "tietrack",
+  storageBucket: "tietrack.firebasestorage.app",
+  messagingSenderId: "230701156418",
+  appId: "1:230701156418:web:82720ca156abbe233a05db"
 };
+
 
 let app: FirebaseApp;
 let db: Firestore;
