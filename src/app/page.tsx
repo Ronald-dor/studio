@@ -34,18 +34,19 @@ import {
   addCategoryToFirestore, 
   deleteCategoryFromFirestore 
 } from '@/services/categoryService';
+import { getAuth, onAuthStateChanged, signOut, User as FirebaseUser } from 'firebase/auth';
+import { app } from '@/lib/firebase';
 
-// Dados iniciais (serão usados apenas se o Firestore estiver vazio na primeira carga das categorias)
 const defaultCategoriesForSeed: TieCategory[] = ['Lisa', 'Listrada', 'Pontilhada'];
 
 export default function HomePage() {
   const router = useRouter();
-  const [isClientLoaded, setIsClientLoaded] = useState(false);
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
+  const [currentUser, setCurrentUser] = useState<FirebaseUser | null>(null);
+  const [authChecked, setAuthChecked] = useState<boolean>(false); // Para saber se a verificação inicial do auth terminou
   
   const [ties, setTies] = useState<Tie[]>([]); 
   const [categories, setCategories] = useState<TieCategory[]>([]);
-  const [isLoadingData, setIsLoadingData] = useState(true); // Estado de carregamento para Firestore
+  const [isLoadingData, setIsLoadingData] = useState(true); 
 
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingTie, setEditingTie] = useState<TieFormData | undefined>(undefined);
@@ -57,39 +58,51 @@ export default function HomePage() {
   const [categoryToDelete, setCategoryToDelete] = useState<TieCategory | null>(null);
   const [isConfirmDeleteCategoryOpen, setIsConfirmDeleteCategoryOpen] = useState(false);
 
-  // Autenticação
-  useEffect(() => {
-    const authStatus = localStorage.getItem('tieTrackAuth') === 'true';
-    setIsAuthenticated(authStatus);
-    setCurrentYear(new Date().getFullYear()); // Pode ser definido aqui, pois não depende de mais nada
-    setIsClientLoaded(true);
+  const auth = getAuth(app);
 
-    if (!authStatus) {
-      router.push('/login');
+  useEffect(() => {
+    setCurrentYear(new Date().getFullYear());
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      if (user) {
+        setCurrentUser(user);
+      } else {
+        setCurrentUser(null);
+        router.push('/login');
+      }
+      setAuthChecked(true); // Indica que a verificação de auth terminou
+    });
+    return () => unsubscribe();
+  }, [router, auth]);
+
+  // Carregar dados do Firestore APÓS o usuário ser autenticado
+  useEffect(() => {
+    if (!authChecked || !currentUser) {
+      // Se auth não foi checado ou não há usuário, não faz nada ou limpa dados.
+      // Se currentUser se torna null (logout), podemos querer limpar os dados.
+      if (!currentUser) {
+        setTies([]);
+        setCategories([]);
+        setIsLoadingData(false); // Parar de carregar se não houver usuário
+      }
+      return;
     }
-  }, [router]);
-
-  // Carregar dados do Firestore
-  useEffect(() => {
-    if (!isClientLoaded || isAuthenticated !== true) return;
-
+    
     const fetchData = async () => {
       setIsLoadingData(true);
       try {
+        const userUid = currentUser.uid;
         const [loadedTies, loadedCategories] = await Promise.all([
-          getTiesFromFirestore(),
-          getCategoriesFromFirestore(defaultCategoriesForSeed) // Passa as categorias padrão para semear se necessário
+          getTiesFromFirestore(userUid),
+          getCategoriesFromFirestore(userUid, defaultCategoriesForSeed)
         ]);
         
         setTies(loadedTies);
 
-        // Garante que UNCATEGORIZED_LABEL esteja presente se alguma gravata a usa mas não está na lista de categorias
         const tiesUseUncategorized = loadedTies.some(tie => !tie.category || tie.category === UNCATEGORIZED_LABEL);
         let finalCategories = [...loadedCategories];
         if (tiesUseUncategorized && !finalCategories.includes(UNCATEGORIZED_LABEL)) {
           finalCategories.push(UNCATEGORIZED_LABEL);
         }
-        // Garante que UNCATEGORIZED_LABEL esteja sempre presente se for a única opção
         if (finalCategories.length === 0 && !finalCategories.includes(UNCATEGORIZED_LABEL)) {
           finalCategories.push(UNCATEGORIZED_LABEL);
         }
@@ -102,19 +115,17 @@ export default function HomePage() {
            title: "Erro ao Carregar Dados",
            description: "Não foi possível carregar os dados do servidor.",
          });
-         // Pode definir um estado de erro aqui se necessário
       } finally {
         setIsLoadingData(false);
       }
     };
 
     fetchData();
-  }, [isClientLoaded, isAuthenticated, toast]);
+  }, [authChecked, currentUser, toast]); // Depende de authChecked e currentUser
 
-  // Efeito para gerenciar UNCATEGORIZED_LABEL na lista de categorias dinamicamente com base nas gravatas
-  // Este useEffect ajuda a manter a lista de categorias consistente com as gravatas existentes
+  // Efeito para gerenciar UNCATEGORIZED_LABEL
   useEffect(() => {
-    if (isLoadingData || !isClientLoaded || isAuthenticated !== true) return;
+    if (isLoadingData || !authChecked || !currentUser) return;
 
     const tiesUseUncategorized = ties.some(tie => !tie.category || tie.category === UNCATEGORIZED_LABEL);
     const hasUncategorizedInCategories = categories.includes(UNCATEGORIZED_LABEL);
@@ -122,25 +133,18 @@ export default function HomePage() {
     if (tiesUseUncategorized && !hasUncategorizedInCategories) {
       setCategories(prev => Array.from(new Set([...prev, UNCATEGORIZED_LABEL])).sort());
     }
-    // Se todas as categorias (incluindo as definidas pelo usuário) forem removidas, 
-    // e UNCATEGORIZED_LABEL não estiver lá, adicione-a de volta.
     else if (categories.length === 0 && !hasUncategorizedInCategories) {
        setCategories([UNCATEGORIZED_LABEL]);
     }
-    // Se UNCATEGORIZED_LABEL foi explicitamente removida (não está em categories)
-    // mas ainda existem gravatas que são UNCATEGORIZED_LABEL, adicione-a de volta.
-    // Isso pode acontecer se a remoção da categoria falhou ou se os dados ficaram dessincronizados.
     else if (!hasUncategorizedInCategories && tiesUseUncategorized) {
         setCategories(prev => Array.from(new Set([...prev, UNCATEGORIZED_LABEL])).sort());
     }
-
-  }, [ties, categories, isLoadingData, isClientLoaded, isAuthenticated]);
+  }, [ties, categories, isLoadingData, authChecked, currentUser]);
 
 
   const processImageAndGetUrl = async (imageFile: File | null | undefined, currentImageUrl?: string): Promise<string> => {
-    // NOTA: Para Firebase, o ideal seria fazer upload da imageFile para o Firebase Storage aqui
-    // e retornar a URL do Firebase Storage.
-    // Por enquanto, continuaremos usando Data URIs como placeholder.
+    // TODO: Implementar upload para Firebase Storage e retornar a URL de lá.
+    // Por enquanto, Data URIs.
     if (imageFile) {
       return new Promise((resolve) => {
         const reader = new FileReader();
@@ -154,7 +158,7 @@ export default function HomePage() {
   };
 
   const handleAddCategory = useCallback(async (categoryName: string): Promise<boolean> => {
-    if (!isClientLoaded || isAuthenticated !== true) return false;
+    if (!authChecked || !currentUser) return false;
     const trimmedName = categoryName.trim();
     if (!trimmedName) {
       toast({ title: "Erro", description: "O nome da categoria não pode estar vazio.", variant: "destructive" });
@@ -166,7 +170,7 @@ export default function HomePage() {
     }
     
     try {
-      await addCategoryToFirestore(trimmedName);
+      await addCategoryToFirestore(currentUser.uid, trimmedName);
       setCategories(prevCategories => Array.from(new Set([...prevCategories, trimmedName])).sort());
       toast({ title: "Categoria Adicionada", description: `A categoria "${trimmedName}" foi adicionada.` });
       return true;
@@ -175,7 +179,7 @@ export default function HomePage() {
       toast({ title: "Erro no Servidor", description: "Não foi possível adicionar a categoria.", variant: "destructive" });
       return false;
     }
-  }, [categories, toast, isClientLoaded, isAuthenticated]);
+  }, [categories, toast, authChecked, currentUser]);
 
   const handleDeleteCategoryRequest = (category: TieCategory) => {
     setCategoryToDelete(category);
@@ -183,18 +187,16 @@ export default function HomePage() {
   };
 
   const handleDeleteCategory = useCallback(async () => {
-    if (!isClientLoaded || isAuthenticated !== true || !categoryToDelete) return;
+    if (!authChecked || !currentUser || !categoryToDelete) return;
 
-    const categoryBeingDeleted = categoryToDelete; // Salva antes de setCategoryToDelete(null)
-    setCategoryToDelete(null); // Fecha o diálogo de confirmação imediatamente
+    const categoryBeingDeleted = categoryToDelete;
+    setCategoryToDelete(null);
     setIsConfirmDeleteCategoryOpen(false);
 
     try {
       let toastMessage = "";
       if (categoryBeingDeleted !== UNCATEGORIZED_LABEL) {
-        // Mover gravatas para UNCATEGORIZED_LABEL no Firestore
-        await batchUpdateTieCategoriesInFirestore(categoryBeingDeleted, UNCATEGORIZED_LABEL);
-        // Atualizar estado local das gravatas
+        await batchUpdateTieCategoriesInFirestore(currentUser.uid, categoryBeingDeleted, UNCATEGORIZED_LABEL);
         setTies(prevTies => 
             prevTies.map(tie => 
                 tie.category === categoryBeingDeleted ? { ...tie, category: UNCATEGORIZED_LABEL } : tie
@@ -205,11 +207,10 @@ export default function HomePage() {
          toastMessage = `A categoria "${UNCATEGORIZED_LABEL}" foi removida dos filtros. Gravatas existentes nesta categoria manterão essa designação até serem editadas.`;
       }
       
-      await deleteCategoryFromFirestore(categoryBeingDeleted);
+      await deleteCategoryFromFirestore(currentUser.uid, categoryBeingDeleted);
       
       setCategories(prevCategories => {
           const updated = prevCategories.filter(cat => cat !== categoryBeingDeleted).sort();
-          // Lógica para garantir UNCATEGORIZED_LABEL se necessário (já coberta por outro useEffect)
           return updated;
       }); 
       
@@ -221,13 +222,12 @@ export default function HomePage() {
       console.error("Erro ao remover categoria no Firestore:", error);
       toast({ title: "Erro no Servidor", description: "Não foi possível remover a categoria.", variant: "destructive" });
     }
-  }, [activeTab, toast, isClientLoaded, isAuthenticated, categoryToDelete]); // Adicionado categoryToDelete aqui
+  }, [activeTab, toast, authChecked, currentUser, categoryToDelete]);
 
 
   const handleFormSubmit = useCallback(async (data: TieFormData) => {
-    if (!isClientLoaded || isAuthenticated !== true) return;
+    if (!authChecked || !currentUser) return;
     
-    // TODO: Implementar upload para Firebase Storage se imageFile existir
     const finalImageUrl = await processImageAndGetUrl(data.imageFile, data.imageUrl);
     const tieCategory = data.category && data.category.trim() !== "" ? data.category : UNCATEGORIZED_LABEL;
 
@@ -242,25 +242,19 @@ export default function HomePage() {
 
     try {
       if (editingTie?.id) {
-        await updateTieInFirestore(editingTie.id, tieDataForSave);
+        await updateTieInFirestore(currentUser.uid, editingTie.id, tieDataForSave);
         setTies(prevTies => prevTies.map(t => t.id === editingTie.id ? { ...tieDataForSave, id: editingTie.id } : t));
         toast({ title: "Gravata Atualizada", description: `${data.name} foi atualizada.` });
       } else {
-        const newTie = await addTieToFirestore(tieDataForSave);
+        const newTie = await addTieToFirestore(currentUser.uid, tieDataForSave);
         setTies(prevTies => [newTie, ...prevTies]);
         toast({ title: "Gravata Adicionada", description: `${data.name} foi adicionada ao seu inventário.` });
       }
 
-      // Adicionar nova categoria ao Firestore se ela não existir E não for UNCATEGORIZED_LABEL
-      // UNCATEGORIZED_LABEL é implícita ou gerenciada pelo seu useEffect dedicado
       if (tieCategory !== UNCATEGORIZED_LABEL && !categories.includes(tieCategory)) { 
-        await addCategoryToFirestore(tieCategory);
+        await addCategoryToFirestore(currentUser.uid, tieCategory);
         setCategories(prevCategories => Array.from(new Set([...prevCategories, tieCategory])).sort());
       } else if (tieCategory === UNCATEGORIZED_LABEL && !categories.includes(UNCATEGORIZED_LABEL)) {
-        // Se for UNCATEGORIZED_LABEL e ela foi removida, este fluxo a adiciona de volta à lista de categorias visíveis
-        // se uma gravata for atribuída a ela.
-        // O `addCategoryToFirestore` não é chamado para UNCATEGORIZED_LABEL, pois ela não deve ser "adicionável" explicitamente.
-        // Se ela foi deletada do Firestore, o useEffect que gerencia UNCATEGORIZED_LABEL deve lidar com sua recriação.
         setCategories(prevCategories => Array.from(new Set([...prevCategories, UNCATEGORIZED_LABEL])).sort());
       }
 
@@ -271,7 +265,7 @@ export default function HomePage() {
 
     setEditingTie(undefined);
     setIsDialogOpen(false);
-  }, [categories, editingTie, toast, isClientLoaded, isAuthenticated, ties]); // Adicionado ties
+  }, [categories, editingTie, toast, authChecked, currentUser]);
 
   const handleEditTie = (tie: Tie) => {
     setEditingTie({ ...tie, imageFile: null });
@@ -279,11 +273,11 @@ export default function HomePage() {
   };
 
   const handleDeleteTie = async (id: string) => {
-    if (!isClientLoaded || isAuthenticated !== true) return;
+    if (!authChecked || !currentUser) return;
     const tieToDelete = ties.find(t => t.id === id);
     
     try {
-      await deleteTieFromFirestore(id);
+      await deleteTieFromFirestore(currentUser.uid, id);
       setTies(prevTies => prevTies.filter(tie => tie.id !== id));
       toast({ title: "Gravata Removida", description: `${tieToDelete?.name || "Gravata"} foi removida.`, variant: "destructive" });
     } catch (error) {
@@ -297,17 +291,22 @@ export default function HomePage() {
     setIsDialogOpen(true);
   };
 
-  const handleLogout = () => {
-    localStorage.removeItem('tieTrackAuth');
-    setIsAuthenticated(false); 
-    setTies([]); // Limpa os dados ao sair
-    setCategories([]);
-    router.push('/login'); 
-    toast({ title: "Logout Realizado", description: "Você foi desconectado." });
+  const handleLogout = async () => {
+    try {
+      await signOut(auth);
+      setCurrentUser(null);
+      setTies([]);
+      setCategories([]);
+      // router.push('/login'); // onAuthStateChanged já cuida disso
+      toast({ title: "Logout Realizado", description: "Você foi desconectado." });
+    } catch (error) {
+      console.error("Erro ao fazer logout:", error);
+      toast({ title: "Erro", description: "Não foi possível fazer logout.", variant: "destructive"});
+    }
   };
 
 
-  if (!isClientLoaded || isAuthenticated === null) {
+  if (!authChecked) {
     return (
       <div className="flex flex-col justify-center items-center min-h-screen bg-background p-4">
         <Shirt size={64} className="text-primary mb-6" />
@@ -316,8 +315,8 @@ export default function HomePage() {
     );
   }
 
-  if (isAuthenticated === false) { 
-    // O useEffect já trata do redirecionamento, mas esta é uma guarda adicional
+  if (!currentUser) { 
+    // Normalmente não chega aqui porque onAuthStateChanged já redireciona, mas é uma guarda.
     return (
       <div className="flex flex-col justify-center items-center min-h-screen bg-background p-4">
         <Shirt size={64} className="text-primary mb-6" />
@@ -328,12 +327,11 @@ export default function HomePage() {
   
   const filteredTies = ties.filter(tie => {
     const matchesSearchTerm = tie.name.toLowerCase().includes(searchTerm.toLowerCase());
-    const currentCategory = tie.category || UNCATEGORIZED_LABEL; // Trata categoria nula/vazia como UNCATEGORIZED_LABEL para filtro
+    const currentCategory = tie.category || UNCATEGORIZED_LABEL;
     const matchesCategory = activeTab === "Todas" || currentCategory === activeTab;
     return matchesSearchTerm && matchesCategory;
   });
 
-  // Ordena as categorias para exibição nas abas
   const sortedCategoriesState = Array.from(new Set(categories)).sort(); 
   const tabsToDisplay: TieCategory[] = ["Todas"];
   if (sortedCategoriesState.includes(UNCATEGORIZED_LABEL)) {
@@ -344,9 +342,6 @@ export default function HomePage() {
           tabsToDisplay.push(cat);
       }
   });
-   // Se categories (o estado) estiver vazio e UNCATEGORIZED_LABEL não estiver lá,
-   // o useEffect que gerencia UNCATEGORIZED_LABEL deve ter cuidado disso se default/gravatas a usarem.
-   // Se, mesmo assim, estiver vazio, tabsToDisplay será só ["Todas"].
 
   return (
     <div className="min-h-screen bg-background text-foreground" suppressHydrationWarning={true}>
@@ -417,8 +412,6 @@ export default function HomePage() {
           onOpenChange={setIsDialogOpen}
           onSubmit={handleFormSubmit}
           initialData={editingTie}
-          // Filtra UNCATEGORIZED_LABEL para não ser uma opção de deleção/adição explícita no dropdown,
-          // mas ela ainda pode ser usada/atribuída.
           allCategories={categories.filter(cat => cat !== UNCATEGORIZED_LABEL)}
           onAddCategory={handleAddCategory}
           onDeleteCategory={handleDeleteCategoryRequest}

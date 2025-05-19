@@ -11,53 +11,59 @@ import {
   arrayRemove
 } from 'firebase/firestore';
 
-// Usaremos um único documento para armazenar a lista de categorias.
-const CATEGORIES_DOC_ID = 'tieCategories';
-const CATEGORIES_COLLECTION = 'app_config'; // Ou qualquer coleção que você queira usar para configurações
-const categoriesDocRef = doc(db, CATEGORIES_COLLECTION, CATEGORIES_DOC_ID);
+const CATEGORIES_DOC_ID = 'userCategories'; // Nome do documento para categorias do usuário
+const CATEGORIES_COLLECTION_SUBPATH = 'app_settings'; // Subcoleção dentro do user doc
 
-const getCategoriesDocument = async (): Promise<{ categories?: TieCategory[] }> => {
-  const docSnap = await getDoc(categoriesDocRef);
+// Helper para obter a referência do documento de categorias de um usuário
+const getUserCategoriesDocRef = (userId: string) => {
+  if (!userId) throw new Error("User ID is required for category operations.");
+  return doc(db, 'users', userId, CATEGORIES_COLLECTION_SUBPATH, CATEGORIES_DOC_ID);
+};
+
+const getCategoriesDocument = async (userId: string): Promise<{ categories?: TieCategory[] }> => {
+  const docSnap = await getDoc(getUserCategoriesDocRef(userId));
   if (docSnap.exists()) {
     return docSnap.data() as { categories?: TieCategory[] };
   }
-  return {}; // Retorna objeto vazio se o documento não existe
+  return {}; 
 };
 
-export const getCategoriesFromFirestore = async (defaultCategories: TieCategory[]): Promise<TieCategory[]> => {
+export const getCategoriesFromFirestore = async (userId: string, defaultCategories: TieCategory[]): Promise<TieCategory[]> => {
   try {
-    const data = await getCategoriesDocument();
-    if (data.categories && data.categories.length > 0) {
-      // Garante que categorias padrão e UNCATEGORIZED_LABEL sejam respeitadas se não estiverem no Firestore ainda
-      // ou se o Firestore estiver vazio.
-      const combined = Array.from(new Set([...defaultCategories, ...data.categories]));
-      if (!combined.includes(UNCATEGORIZED_LABEL)) combined.push(UNCATEGORIZED_LABEL);
-      return combined.sort();
+    const data = await getCategoriesDocument(userId);
+    let categoriesToReturn = defaultCategories;
 
+    if (data.categories && data.categories.length > 0) {
+      categoriesToReturn = Array.from(new Set([...defaultCategories, ...data.categories]));
+    } else {
+      // Se não há categorias no Firestore para este usuário, cria o documento com as padrões.
+      await setDoc(getUserCategoriesDocRef(userId), { categories: defaultCategories });
     }
-    // Se não há categorias no Firestore, cria o documento com as padrões.
-    await setDoc(categoriesDocRef, { categories: defaultCategories });
-    const initialCategories = [...defaultCategories];
-    if (!initialCategories.includes(UNCATEGORIZED_LABEL)) initialCategories.push(UNCATEGORIZED_LABEL);
-    return initialCategories.sort();
+    
+    // Garante que UNCATEGORIZED_LABEL esteja presente
+    if (!categoriesToReturn.includes(UNCATEGORIZED_LABEL)) {
+      categoriesToReturn.push(UNCATEGORIZED_LABEL);
+    }
+    return categoriesToReturn.sort();
 
   } catch (error) {
     console.error("Error fetching categories from Firestore: ", error);
-    // Em caso de erro, retorna as categorias padrão para não quebrar a UI
     const errorDefaults = [...defaultCategories];
     if (!errorDefaults.includes(UNCATEGORIZED_LABEL)) errorDefaults.push(UNCATEGORIZED_LABEL);
     return errorDefaults.sort();
   }
 };
 
-export const addCategoryToFirestore = async (categoryName: TieCategory): Promise<void> => {
+export const addCategoryToFirestore = async (userId: string, categoryName: TieCategory): Promise<void> => {
   try {
-    // Garante que o documento exista antes de tentar adicionar ao array
-    const docSnap = await getDoc(categoriesDocRef);
+    const userCategoriesRef = getUserCategoriesDocRef(userId);
+    const docSnap = await getDoc(userCategoriesRef);
     if (!docSnap.exists()) {
-      await setDoc(categoriesDocRef, { categories: [categoryName] });
+      // Se o documento não existe, cria com a primeira categoria
+      await setDoc(userCategoriesRef, { categories: [categoryName] });
     } else {
-      await updateDoc(categoriesDocRef, {
+      // Se existe, adiciona ao array
+      await updateDoc(userCategoriesRef, {
         categories: arrayUnion(categoryName)
       });
     }
@@ -67,9 +73,9 @@ export const addCategoryToFirestore = async (categoryName: TieCategory): Promise
   }
 };
 
-export const deleteCategoryFromFirestore = async (categoryName: TieCategory): Promise<void> => {
+export const deleteCategoryFromFirestore = async (userId: string, categoryName: TieCategory): Promise<void> => {
   try {
-    await updateDoc(categoriesDocRef, {
+    await updateDoc(getUserCategoriesDocRef(userId), {
       categories: arrayRemove(categoryName)
     });
   } catch (error) {
