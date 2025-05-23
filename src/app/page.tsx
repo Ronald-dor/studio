@@ -54,11 +54,11 @@ const defaultCategoriesForSeed: TieCategory[] = ['Lisa', 'Listrada', 'Pontilhada
 export default function HomePage() {
   const router = useRouter();
   const [currentUser, setCurrentUser] = useState<FirebaseUser | null>(null);
-  const [authChecked, setAuthChecked] = useState<boolean>(false);
+  const [authChecked, setAuthChecked] = useState<boolean>(false); // To track if initial auth check is done
   
   const [ties, setTies] = useState<Tie[]>([]); 
   const [categories, setCategories] = useState<TieCategory[]>([]);
-  const [isLoadingData, setIsLoadingData] = useState(true); 
+  const [isLoadingData, setIsLoadingData] = useState(true); // For data fetching state
 
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingTie, setEditingTie] = useState<TieFormData | undefined>(undefined);
@@ -88,7 +88,7 @@ export default function HomePage() {
 
   useEffect(() => {
     if (!authChecked || !currentUser) {
-      if (!currentUser) {
+      if (!currentUser) { // If no user even after auth check, clear data and stop loading
         setTies([]);
         setCategories([]);
         setIsLoadingData(false); 
@@ -109,6 +109,7 @@ export default function HomePage() {
 
         let finalCategories = [...loadedCategories];
         const tiesUseUncategorized = loadedTies.some(tie => !tie.category || tie.category === UNCATEGORIZED_LABEL);
+        
         if (tiesUseUncategorized && !finalCategories.includes(UNCATEGORIZED_LABEL)) {
           finalCategories.push(UNCATEGORIZED_LABEL);
         }
@@ -142,18 +143,17 @@ export default function HomePage() {
 
     if (tiesUseUncategorized && !hasUncategorizedInCategories) {
         setCategories(prev => Array.from(new Set([...prev, UNCATEGORIZED_LABEL])).sort());
-    } else if (!tiesUseUncategorized && hasUncategorizedInCategories && categories.length > 1) {
-        // Only remove if there are other categories and no ties use it.
-        // This logic is a bit complex and might need refinement based on exact desired UX for UNCATEGORIZED_LABEL.
-        // For now, let's prevent automatic removal if it was explicitly added or is the only one.
+    } else if (!tiesUseUncategorized && hasUncategorizedInCategories && categories.length > 1 && categoryToDelete !== UNCATEGORIZED_LABEL) {
+        // Only remove if there are other categories, no ties use it, AND it wasn't just manually deleted
+        // This complex condition tries to respect manual deletion of UNCATEGORIZED_LABEL
+        // It's better to let manual deletion be the primary way to remove it if desired.
     } else if (categories.length === 0 && !hasUncategorizedInCategories && (ties.length > 0 || defaultCategoriesForSeed.length === 0)) {
-       // if all categories are deleted and there are still ties, or no default categories.
        setCategories([UNCATEGORIZED_LABEL]);
     } else if (!hasUncategorizedInCategories && tiesUseUncategorized) {
         setCategories(prev => Array.from(new Set([...prev, UNCATEGORIZED_LABEL])).sort());
     }
 
-  }, [ties, categories, isLoadingData, authChecked, currentUser]);
+  }, [ties, categories, isLoadingData, authChecked, currentUser, categoryToDelete]);
 
 
   const processImageAndGetUrl = async (imageFile: File | null | undefined, currentImageUrl?: string): Promise<string> => {
@@ -166,8 +166,6 @@ export default function HomePage() {
         reader.readAsDataURL(imageFile);
       });
     }
-    // TODO: For Firebase Storage, you'd upload here and return the storage URL.
-    // For now, using placeholder or existing (possibly data URI).
     return currentImageUrl || `https://placehold.co/300x400.png`;
   };
 
@@ -204,11 +202,13 @@ export default function HomePage() {
     if (!authChecked || !currentUser || !categoryToDelete) return;
 
     const categoryBeingDeleted = categoryToDelete;
-    setCategoryToDelete(null); // Reset before async operations
-    setIsConfirmDeleteCategoryOpen(false);
+    // setCategoryToDelete(null); // Reset before async, done in finally/success
+    // setIsConfirmDeleteCategoryOpen(false); // Done in finally/success
 
     try {
       let toastMessage = "";
+      let newActiveCategory = activeCategory;
+
       if (categoryBeingDeleted !== UNCATEGORIZED_LABEL) {
         await batchUpdateTieCategoriesInFirestore(currentUser.uid, categoryBeingDeleted, UNCATEGORIZED_LABEL);
         setTies(prevTies => 
@@ -217,34 +217,36 @@ export default function HomePage() {
             )
         );
         toastMessage = `A categoria "${categoryBeingDeleted}" foi removida. Gravatas movidas para "${UNCATEGORIZED_LABEL}".`;
+        if (activeCategory === categoryBeingDeleted) {
+          newActiveCategory = UNCATEGORIZED_LABEL; 
+        }
       } else {
          toastMessage = `A categoria "${UNCATEGORIZED_LABEL}" foi removida dos filtros. Gravatas existentes nesta categoria manterão essa designação até serem editadas ou a categoria ser recriada.`;
+         if (activeCategory === UNCATEGORIZED_LABEL) {
+            const nextCategory = categories.find(cat => cat !== UNCATEGORIZED_LABEL) || "Todas";
+            newActiveCategory = nextCategory;
+         }
       }
       
       await deleteCategoryFromFirestore(currentUser.uid, categoryBeingDeleted);
       
       setCategories(prevCategories => {
-          const updated = prevCategories.filter(cat => cat !== categoryBeingDeleted).sort();
-           // Ensure UNCATEGORIZED_LABEL is added back if it's now needed
-          const tiesStillUseUncategorized = ties.some(tie => (tie.category === categoryBeingDeleted && categoryBeingDeleted !== UNCATEGORIZED_LABEL) || tie.category === UNCATEGORIZED_LABEL);
-          if (updated.length === 0 && tiesStillUseUncategorized && !updated.includes(UNCATEGORIZED_LABEL)) {
-              return [UNCATEGORIZED_LABEL];
-          }
-          if (tiesStillUseUncategorized && !updated.includes(UNCATEGORIZED_LABEL) && categoryBeingDeleted !== UNCATEGORIZED_LABEL) {
-              return Array.from(new Set([...updated, UNCATEGORIZED_LABEL])).sort();
-          }
-          return updated;
+          const updated = prevCategories.filter(cat => cat !== categoryBeingDeleted);
+          // The useEffect for UNCATEGORIZED_LABEL will handle its presence based on ties.
+          // If updated is empty, and ties exist (now as UNCATEGORIZED_LABEL), the useEffect will add it back.
+          return updated.length > 0 ? updated.sort() : []; // If empty, let useEffect decide on UNCATEGORIZED_LABEL
       }); 
       
-      if (activeCategory === categoryBeingDeleted) {
-          setActiveCategory(UNCATEGORIZED_LABEL); 
-      }
+      setActiveCategory(newActiveCategory);
       toast({ title: "Categoria Removida", description: toastMessage });
     } catch (error) {
       console.error("Erro ao remover categoria no Firestore:", error);
       toast({ title: "Erro no Servidor", description: "Não foi possível remover a categoria.", variant: "destructive" });
+    } finally {
+      setCategoryToDelete(null);
+      setIsConfirmDeleteCategoryOpen(false);
     }
-  }, [activeCategory, toast, authChecked, currentUser, categoryToDelete, ties]);
+  }, [activeCategory, toast, authChecked, currentUser, categoryToDelete, categories]);
 
 
   const handleFormSubmit = useCallback(async (data: TieFormData) => {
@@ -274,7 +276,7 @@ export default function HomePage() {
       }
 
       if (!categories.includes(tieCategory)) { 
-        await addCategoryToFirestore(currentUser.uid, tieCategory); // Ensure the new category is saved if it's new
+        await addCategoryToFirestore(currentUser.uid, tieCategory); 
         setCategories(prevCategories => Array.from(new Set([...prevCategories, tieCategory])).sort());
       }
 
@@ -314,7 +316,7 @@ export default function HomePage() {
   const handleLogout = async () => {
     try {
       await signOut(auth);
-      // State clearing (currentUser, ties, categories) will be handled by onAuthStateChanged
+      // State clearing and redirection will be handled by onAuthStateChanged
     } catch (error) {
       console.error("Erro ao fazer logout:", error);
       toast({ title: "Erro", description: "Não foi possível fazer logout.", variant: "destructive"});
@@ -359,9 +361,9 @@ export default function HomePage() {
 
 
   return (
-    <SidebarProvider>
+    <SidebarProvider defaultOpen={false}>
       <div className="min-h-screen bg-background text-foreground flex" suppressHydrationWarning={true}>
-        <Sidebar className="border-r">
+        <Sidebar className="border-r" collapsible="offcanvas">
           <UiSidebarHeader className="p-4 flex items-center gap-2">
             <Shirt size={24} className="text-sidebar-primary" />
             <h1 className="text-xl font-semibold text-sidebar-primary">TieTrack</h1>
@@ -392,7 +394,7 @@ export default function HomePage() {
           <header className="py-4 px-4 md:px-8 border-b border-border sticky top-0 bg-background/95 backdrop-blur-sm z-10">
             <div className="container mx-auto flex flex-col md:flex-row justify-between items-center gap-4 md:gap-2">
               <div className="flex items-center space-x-2">
-                <SidebarTrigger className="md:hidden" /> {/* Hidden on md and up for primary nav */}
+                <SidebarTrigger /> {/* Removed md:hidden */}
                 {/* Title removed from here as it's in sidebar header */}
               </div>
               <div className="flex flex-col sm:flex-row items-center gap-2 w-full md:w-auto md:flex-1 md:justify-end">
@@ -409,7 +411,6 @@ export default function HomePage() {
                 <Button onClick={openAddDialog} variant="default" className="w-full sm:w-auto">
                   <PlusCircle size={20} className="mr-2" /> Nova Gravata
                 </Button>
-                 {/* Logout button moved to sidebar footer */}
               </div>
             </div>
           </header>
@@ -448,7 +449,7 @@ export default function HomePage() {
           onOpenChange={setIsDialogOpen}
           onSubmit={handleFormSubmit}
           initialData={editingTie}
-          allCategories={categories.filter(cat => cat !== UNCATEGORIZED_LABEL)} // Pass categories that can be managed
+          allCategories={categories.filter(cat => cat !== UNCATEGORIZED_LABEL && cat.toLowerCase() !== 'todas')}
           onAddCategory={handleAddCategory}
           onDeleteCategory={handleDeleteCategoryRequest}
       />
@@ -472,5 +473,3 @@ export default function HomePage() {
     </SidebarProvider>
   );
 }
-
-    
