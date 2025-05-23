@@ -38,33 +38,176 @@ import { app } from '@/lib/firebase';
 import {
   SidebarProvider,
   Sidebar,
-  SidebarHeader as UiSidebarHeader, // Renamed to avoid conflict
+  SidebarHeader as UiSidebarHeader,
   SidebarContent,
-  SidebarFooter as UiSidebarFooter, // Renamed to avoid conflict
+  SidebarFooter as UiSidebarFooter,
   SidebarMenu,
   SidebarMenuItem,
   SidebarMenuButton,
   SidebarInset,
-  SidebarTrigger,
+  useSidebar,
 } from '@/components/ui/sidebar';
 
-
 const defaultCategoriesForSeed: TieCategory[] = ['Lisa', 'Listrada', 'Pontilhada'];
+
+// New component to contain the main layout and use the sidebar context
+function MainContentLayout({
+  currentUser,
+  ties,
+  categories,
+  isLoadingData,
+  searchTerm,
+  setSearchTerm,
+  activeCategory,
+  setActiveCategory,
+  currentYear,
+  handleLogout,
+  openAddDialog,
+  handleEditTie,
+  handleDeleteTie,
+  handleAddCategory,
+  handleDeleteCategoryRequest,
+}: {
+  currentUser: FirebaseUser;
+  ties: Tie[];
+  categories: TieCategory[];
+  isLoadingData: boolean;
+  searchTerm: string;
+  setSearchTerm: (term: string) => void;
+  activeCategory: string;
+  setActiveCategory: (category: string) => void;
+  currentYear: number | null;
+  handleLogout: () => void;
+  openAddDialog: () => void;
+  handleEditTie: (tie: Tie) => void;
+  handleDeleteTie: (id: string) => void;
+  handleAddCategory: (categoryName: string) => Promise<boolean>;
+  onDeleteCategory: (categoryName: TieCategory) => void; // Renamed for clarity
+  handleDeleteCategoryRequest: (category: TieCategory) => void;
+}) {
+  const { toggleSidebar } = useSidebar();
+
+  const filteredTies = ties.filter(tie => {
+    const matchesSearchTerm = tie.name.toLowerCase().includes(searchTerm.toLowerCase());
+    const currentTieCategory = tie.category || UNCATEGORIZED_LABEL;
+    const matchesCategory = activeCategory === "Todas" || currentTieCategory === activeCategory;
+    return matchesSearchTerm && matchesCategory;
+  });
+
+  const sidebarMenuItems: TieCategory[] = ["Todas"];
+  const sortedCategoriesState = Array.from(new Set(categories)).sort();
+  if (sortedCategoriesState.includes(UNCATEGORIZED_LABEL)) {
+      sidebarMenuItems.push(UNCATEGORIZED_LABEL);
+  }
+  sortedCategoriesState.forEach(cat => {
+      if (cat !== UNCATEGORIZED_LABEL && !sidebarMenuItems.includes(cat)) { 
+          sidebarMenuItems.push(cat);
+      }
+  });
+
+  return (
+    <div className="min-h-screen bg-background text-foreground flex" suppressHydrationWarning={true}>
+      <Sidebar className="border-r" collapsible="offcanvas">
+        <UiSidebarHeader className="p-4 flex items-center gap-2">
+          <Shirt size={24} className="text-sidebar-primary" />
+          <h1 className="text-xl font-semibold text-sidebar-primary">TieTrack</h1>
+        </UiSidebarHeader>
+        <SidebarContent>
+          <SidebarMenu>
+            {sidebarMenuItems.map((category) => (
+              <SidebarMenuItem key={category}>
+                <SidebarMenuButton
+                  onClick={() => setActiveCategory(category)}
+                  isActive={activeCategory === category}
+                  className="w-full justify-start"
+                >
+                  {category}
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            ))}
+          </SidebarMenu>
+        </SidebarContent>
+         <UiSidebarFooter className="p-2 border-t">
+           <Button onClick={handleLogout} variant="ghost" className="w-full justify-start text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground">
+              <LogOut size={16} className="mr-2" /> Sair
+            </Button>
+         </UiSidebarFooter>
+      </Sidebar>
+
+      <SidebarInset className="flex-1 flex flex-col">
+        <header className="py-4 px-4 md:px-8 border-b border-border sticky top-0 bg-background/95 backdrop-blur-sm z-10">
+          <div className="container mx-auto flex flex-col md:flex-row justify-between items-center gap-4 md:gap-2">
+            <div className="flex items-center space-x-2">
+              <Button variant="ghost" onClick={toggleSidebar} className="flex items-center px-2 py-1 h-auto text-base font-semibold">
+                <Shirt size={20} className="mr-2" />
+                <span>TieTrack</span>
+              </Button>
+            </div>
+            <div className="flex flex-col sm:flex-row items-center gap-2 w-full md:w-auto md:flex-1 md:justify-end">
+              <div className="relative w-full sm:w-auto md:max-w-xs">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  type="search"
+                  placeholder="Pesquisar por nome..."
+                  className="pl-10 pr-4 py-2 w-full"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                />
+              </div>
+              <Button onClick={openAddDialog} variant="default" className="w-full sm:w-auto">
+                <PlusCircle size={20} className="mr-2" /> Nova Gravata
+              </Button>
+            </div>
+          </div>
+        </header>
+
+        <main className="flex-1 container mx-auto p-4 md:p-8 overflow-y-auto">
+          {isLoadingData ? (
+            <div className="flex justify-center items-center h-64">
+              <p className="text-muted-foreground">Carregando dados do servidor...</p>
+            </div>
+          ) : (
+             <>
+               {filteredTies.length > 0 ? (
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                  {filteredTies.map((tie) => (
+                    <TieCard key={tie.id} tie={tie} onEdit={handleEditTie} onDelete={handleDeleteTie} />
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-10">
+                  <p className="text-xl text-muted-foreground">Nenhuma gravata para exibir.</p>
+                  <p className="text-sm text-muted-foreground">Tente uma categoria ou termo de pesquisa diferente, ou adicione uma nova gravata.</p>
+                </div>
+              )}
+             </>
+          )}
+        </main>
+        
+        <footer className="py-4 text-center text-xs text-muted-foreground border-t border-border">
+          © {currentYear || new Date().getFullYear()} TieTrack. Mantenha sua coleção organizada.
+        </footer>
+      </SidebarInset>
+    </div>
+  );
+}
+
 
 export default function HomePage() {
   const router = useRouter();
   const [currentUser, setCurrentUser] = useState<FirebaseUser | null>(null);
-  const [authChecked, setAuthChecked] = useState<boolean>(false); // To track if initial auth check is done
-  
+  const [authChecked, setAuthChecked] = useState<boolean>(false); // Tracks if initial auth check is done
+  const [isClientLoaded, setIsClientLoaded] = useState<boolean>(false); // Tracks if client effects have run
+
   const [ties, setTies] = useState<Tie[]>([]); 
   const [categories, setCategories] = useState<TieCategory[]>([]);
-  const [isLoadingData, setIsLoadingData] = useState(true); // For data fetching state
+  const [isLoadingData, setIsLoadingData] = useState(true); 
 
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingTie, setEditingTie] = useState<TieFormData | undefined>(undefined);
   const [searchTerm, setSearchTerm] = useState('');
   const { toast } = useToast();
-  const [activeCategory, setActiveCategory] = useState<string>("Todas"); // Renamed from activeTab
+  const [activeCategory, setActiveCategory] = useState<string>("Todas"); 
   const [currentYear, setCurrentYear] = useState<number | null>(null);
 
   const [categoryToDelete, setCategoryToDelete] = useState<TieCategory | null>(null);
@@ -73,7 +216,7 @@ export default function HomePage() {
   const auth = getAuth(app);
 
   useEffect(() => {
-    setCurrentYear(new Date().getFullYear());
+    setIsClientLoaded(true); // Mark client as loaded once component mounts
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       if (user) {
         setCurrentUser(user);
@@ -87,8 +230,14 @@ export default function HomePage() {
   }, [router, auth]);
 
   useEffect(() => {
-    if (!authChecked || !currentUser) {
-      if (!currentUser) { // If no user even after auth check, clear data and stop loading
+    if (isClientLoaded) { // Only run if client has loaded
+      setCurrentYear(new Date().getFullYear());
+    }
+  }, [isClientLoaded]);
+
+  useEffect(() => {
+    if (!isClientLoaded || !authChecked || !currentUser) {
+      if (!currentUser && authChecked && isClientLoaded) { 
         setTies([]);
         setCategories([]);
         setIsLoadingData(false); 
@@ -116,7 +265,7 @@ export default function HomePage() {
          if (finalCategories.length === 0 && !finalCategories.includes(UNCATEGORIZED_LABEL) && loadedTies.length > 0) {
            finalCategories.push(UNCATEGORIZED_LABEL);
         } else if (finalCategories.length === 0 && !finalCategories.includes(UNCATEGORIZED_LABEL) && loadedTies.length === 0 && defaultCategoriesForSeed.length === 0){
-            finalCategories.push(UNCATEGORIZED_LABEL); // Ensure uncategorized is present if all else fails
+            finalCategories.push(UNCATEGORIZED_LABEL); 
         }
         setCategories(Array.from(new Set(finalCategories)).sort());
 
@@ -133,27 +282,23 @@ export default function HomePage() {
     };
 
     fetchData();
-  }, [authChecked, currentUser, toast]); 
+  }, [isClientLoaded, authChecked, currentUser, toast]); 
 
   useEffect(() => {
-    if (isLoadingData || !authChecked || !currentUser) return;
+    if (!isClientLoaded || isLoadingData || !authChecked || !currentUser) return;
 
     const tiesUseUncategorized = ties.some(tie => !tie.category || tie.category === UNCATEGORIZED_LABEL);
     const hasUncategorizedInCategories = categories.includes(UNCATEGORIZED_LABEL);
 
     if (tiesUseUncategorized && !hasUncategorizedInCategories) {
         setCategories(prev => Array.from(new Set([...prev, UNCATEGORIZED_LABEL])).sort());
-    } else if (!tiesUseUncategorized && hasUncategorizedInCategories && categories.length > 1 && categoryToDelete !== UNCATEGORIZED_LABEL) {
-        // Only remove if there are other categories, no ties use it, AND it wasn't just manually deleted
-        // This complex condition tries to respect manual deletion of UNCATEGORIZED_LABEL
-        // It's better to let manual deletion be the primary way to remove it if desired.
-    } else if (categories.length === 0 && !hasUncategorizedInCategories && (ties.length > 0 || defaultCategoriesForSeed.length === 0)) {
+    } else if (categories.length === 0 && !hasUncategorizedInCategories && (ties.length > 0 || defaultCategoriesForSeed.length === 0 || categories.length === 0 )) {
        setCategories([UNCATEGORIZED_LABEL]);
     } else if (!hasUncategorizedInCategories && tiesUseUncategorized) {
         setCategories(prev => Array.from(new Set([...prev, UNCATEGORIZED_LABEL])).sort());
     }
 
-  }, [ties, categories, isLoadingData, authChecked, currentUser, categoryToDelete]);
+  }, [ties, categories, isLoadingData, isClientLoaded, authChecked, currentUser, categoryToDelete]);
 
 
   const processImageAndGetUrl = async (imageFile: File | null | undefined, currentImageUrl?: string): Promise<string> => {
@@ -170,7 +315,7 @@ export default function HomePage() {
   };
 
   const handleAddCategory = useCallback(async (categoryName: string): Promise<boolean> => {
-    if (!authChecked || !currentUser) return false;
+    if (!isClientLoaded || !authChecked || !currentUser) return false;
     const trimmedName = categoryName.trim();
     if (!trimmedName) {
       toast({ title: "Erro", description: "O nome da categoria não pode estar vazio.", variant: "destructive" });
@@ -191,7 +336,7 @@ export default function HomePage() {
       toast({ title: "Erro no Servidor", description: "Não foi possível adicionar a categoria.", variant: "destructive" });
       return false;
     }
-  }, [categories, toast, authChecked, currentUser]);
+  }, [categories, toast, isClientLoaded, authChecked, currentUser]);
 
   const handleDeleteCategoryRequest = (category: TieCategory) => {
     setCategoryToDelete(category);
@@ -199,11 +344,9 @@ export default function HomePage() {
   };
 
   const handleDeleteCategory = useCallback(async () => {
-    if (!authChecked || !currentUser || !categoryToDelete) return;
+    if (!isClientLoaded || !authChecked || !currentUser || !categoryToDelete) return;
 
     const categoryBeingDeleted = categoryToDelete;
-    // setCategoryToDelete(null); // Reset before async, done in finally/success
-    // setIsConfirmDeleteCategoryOpen(false); // Done in finally/success
 
     try {
       let toastMessage = "";
@@ -232,9 +375,7 @@ export default function HomePage() {
       
       setCategories(prevCategories => {
           const updated = prevCategories.filter(cat => cat !== categoryBeingDeleted);
-          // The useEffect for UNCATEGORIZED_LABEL will handle its presence based on ties.
-          // If updated is empty, and ties exist (now as UNCATEGORIZED_LABEL), the useEffect will add it back.
-          return updated.length > 0 ? updated.sort() : []; // If empty, let useEffect decide on UNCATEGORIZED_LABEL
+          return updated.sort();
       }); 
       
       setActiveCategory(newActiveCategory);
@@ -246,11 +387,11 @@ export default function HomePage() {
       setCategoryToDelete(null);
       setIsConfirmDeleteCategoryOpen(false);
     }
-  }, [activeCategory, toast, authChecked, currentUser, categoryToDelete, categories]);
+  }, [activeCategory, toast, isClientLoaded, authChecked, currentUser, categoryToDelete, categories]);
 
 
   const handleFormSubmit = useCallback(async (data: TieFormData) => {
-    if (!authChecked || !currentUser) return;
+    if (!isClientLoaded || !authChecked || !currentUser) return;
     
     const finalImageUrl = await processImageAndGetUrl(data.imageFile, data.imageUrl);
     const tieCategory = data.category && data.category.trim() !== "" ? data.category : UNCATEGORIZED_LABEL;
@@ -287,7 +428,7 @@ export default function HomePage() {
 
     setEditingTie(undefined);
     setIsDialogOpen(false);
-  }, [categories, editingTie, toast, authChecked, currentUser]);
+  }, [categories, editingTie, toast, isClientLoaded, authChecked, currentUser]);
 
   const handleEditTie = (tie: Tie) => {
     setEditingTie({ ...tie, imageFile: null });
@@ -295,7 +436,7 @@ export default function HomePage() {
   };
 
   const handleDeleteTie = async (id: string) => {
-    if (!authChecked || !currentUser) return;
+    if (!isClientLoaded || !authChecked || !currentUser) return;
     const tieToDelete = ties.find(t => t.id === id);
     
     try {
@@ -316,133 +457,43 @@ export default function HomePage() {
   const handleLogout = async () => {
     try {
       await signOut(auth);
-      // State clearing and redirection will be handled by onAuthStateChanged
+      // onAuthStateChanged will handle redirect
     } catch (error) {
       console.error("Erro ao fazer logout:", error);
       toast({ title: "Erro", description: "Não foi possível fazer logout.", variant: "destructive"});
     }
   };
 
-  if (!authChecked) {
+  if (!isClientLoaded || !authChecked || !currentUser) {
     return (
       <div className="flex flex-col justify-center items-center min-h-screen bg-background p-4">
         <Shirt size={64} className="text-primary mb-6" />
-        <p className="text-muted-foreground">Verificando autenticação...</p>
-      </div>
-    );
-  }
-
-  if (!currentUser) { 
-    return (
-      <div className="flex flex-col justify-center items-center min-h-screen bg-background p-4">
-        <Shirt size={64} className="text-primary mb-6" />
-        <p className="text-muted-foreground">Redirecionando para o login...</p>
+        <p className="text-muted-foreground">
+          {!isClientLoaded || !authChecked ? "Verificando autenticação..." : "Redirecionando para o login..."}
+        </p>
       </div>
     );
   }
   
-  const filteredTies = ties.filter(tie => {
-    const matchesSearchTerm = tie.name.toLowerCase().includes(searchTerm.toLowerCase());
-    const currentTieCategory = tie.category || UNCATEGORIZED_LABEL;
-    const matchesCategory = activeCategory === "Todas" || currentTieCategory === activeCategory;
-    return matchesSearchTerm && matchesCategory;
-  });
-  
-  const sidebarMenuItems: TieCategory[] = ["Todas"];
-  const sortedCategoriesState = Array.from(new Set(categories)).sort();
-  if (sortedCategoriesState.includes(UNCATEGORIZED_LABEL)) {
-      sidebarMenuItems.push(UNCATEGORIZED_LABEL);
-  }
-  sortedCategoriesState.forEach(cat => {
-      if (cat !== UNCATEGORIZED_LABEL && !sidebarMenuItems.includes(cat)) { 
-          sidebarMenuItems.push(cat);
-      }
-  });
-
-
   return (
-    <SidebarProvider defaultOpen={false}>
-      <div className="min-h-screen bg-background text-foreground flex" suppressHydrationWarning={true}>
-        <Sidebar className="border-r" collapsible="offcanvas">
-          <UiSidebarHeader className="p-4 flex items-center gap-2">
-            <Shirt size={24} className="text-sidebar-primary" />
-            <h1 className="text-xl font-semibold text-sidebar-primary">TieTrack</h1>
-          </UiSidebarHeader>
-          <SidebarContent>
-            <SidebarMenu>
-              {sidebarMenuItems.map((category) => (
-                <SidebarMenuItem key={category}>
-                  <SidebarMenuButton
-                    onClick={() => setActiveCategory(category)}
-                    isActive={activeCategory === category}
-                    className="w-full justify-start"
-                  >
-                    {category}
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              ))}
-            </SidebarMenu>
-          </SidebarContent>
-           <UiSidebarFooter className="p-2 border-t">
-             <Button onClick={handleLogout} variant="ghost" className="w-full justify-start text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground">
-                <LogOut size={16} className="mr-2" /> Sair
-              </Button>
-           </UiSidebarFooter>
-        </Sidebar>
-
-        <SidebarInset className="flex-1 flex flex-col">
-          <header className="py-4 px-4 md:px-8 border-b border-border sticky top-0 bg-background/95 backdrop-blur-sm z-10">
-            <div className="container mx-auto flex flex-col md:flex-row justify-between items-center gap-4 md:gap-2">
-              <div className="flex items-center space-x-2">
-                <SidebarTrigger /> {/* Removed md:hidden */}
-                {/* Title removed from here as it's in sidebar header */}
-              </div>
-              <div className="flex flex-col sm:flex-row items-center gap-2 w-full md:w-auto md:flex-1 md:justify-end">
-                <div className="relative w-full sm:w-auto md:max-w-xs">
-                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                  <Input
-                    type="search"
-                    placeholder="Pesquisar por nome..."
-                    className="pl-10 pr-4 py-2 w-full"
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                  />
-                </div>
-                <Button onClick={openAddDialog} variant="default" className="w-full sm:w-auto">
-                  <PlusCircle size={20} className="mr-2" /> Nova Gravata
-                </Button>
-              </div>
-            </div>
-          </header>
-
-          <main className="flex-1 container mx-auto p-4 md:p-8 overflow-y-auto">
-            {isLoadingData ? (
-              <div className="flex justify-center items-center h-64">
-                <p className="text-muted-foreground">Carregando dados do servidor...</p>
-              </div>
-            ) : (
-               <>
-                 {filteredTies.length > 0 ? (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-                    {filteredTies.map((tie) => (
-                      <TieCard key={tie.id} tie={tie} onEdit={handleEditTie} onDelete={handleDeleteTie} />
-                    ))}
-                  </div>
-                ) : (
-                  <div className="text-center py-10">
-                    <p className="text-xl text-muted-foreground">Nenhuma gravata para exibir.</p>
-                    <p className="text-sm text-muted-foreground">Tente uma categoria ou termo de pesquisa diferente, ou adicione uma nova gravata.</p>
-                  </div>
-                )}
-               </>
-            )}
-          </main>
-          
-          <footer className="py-4 text-center text-xs text-muted-foreground border-t border-border">
-            © {currentYear || new Date().getFullYear()} TieTrack. Mantenha sua coleção organizada.
-          </footer>
-        </SidebarInset>
-      </div>
+    <SidebarProvider defaultOpen={false}> {/* Sidebar starts closed */}
+      <MainContentLayout
+        currentUser={currentUser}
+        ties={ties}
+        categories={categories}
+        isLoadingData={isLoadingData}
+        searchTerm={searchTerm}
+        setSearchTerm={setSearchTerm}
+        activeCategory={activeCategory}
+        setActiveCategory={setActiveCategory}
+        currentYear={currentYear}
+        handleLogout={handleLogout}
+        openAddDialog={openAddDialog}
+        handleEditTie={handleEditTie}
+        handleDeleteTie={handleDeleteTie}
+        handleAddCategory={handleAddCategory}
+        handleDeleteCategoryRequest={handleDeleteCategoryRequest}
+      />
       
       <AddTieDialog
           open={isDialogOpen}
@@ -451,7 +502,7 @@ export default function HomePage() {
           initialData={editingTie}
           allCategories={categories.filter(cat => cat !== UNCATEGORIZED_LABEL && cat.toLowerCase() !== 'todas')}
           onAddCategory={handleAddCategory}
-          onDeleteCategory={handleDeleteCategoryRequest}
+          onDeleteCategory={handleDeleteCategoryRequest} // Passed correctly
       />
 
       <AlertDialog open={isConfirmDeleteCategoryOpen} onOpenChange={setIsConfirmDeleteCategoryOpen}>
