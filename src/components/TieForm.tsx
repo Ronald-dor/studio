@@ -42,19 +42,20 @@ async function dataURItoBlobInForm(dataURI: string): Promise<Blob> {
 
 async function compressImageIfNeeded(file: File): Promise<File> {
   if (!file.type.startsWith('image/') || file.size <= MAX_IMAGE_SIZE_BYTES) {
-    console.log(`Image "${file.name}" is small enough or not an image, using original. Size: ${(file.size / 1024 / 1024).toFixed(2)} MB`);
+    console.log(`TieForm: Image "${file.name}" is small enough or not an image, using original. Size: ${(file.size / 1024 / 1024).toFixed(2)} MB`);
     return file;
   }
 
-  console.log(`Original image "${file.name}" size: ${(file.size / 1024 / 1024).toFixed(2)} MB. Compressing...`);
+  console.log(`TieForm: Original image "${file.name}" size: ${(file.size / 1024 / 1024).toFixed(2)} MB. Compressing...`);
 
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = (event) => {
       if (!event.target?.result || typeof event.target.result !== 'string') {
+        console.error('TieForm: Failed to read image file for compression.');
         return reject(new Error('Failed to read image file for compression.'));
       }
-      const img = new Image();
+      const img = new window.Image();
       img.onload = () => {
         let { width, height } = img;
         const aspectRatio = width / height;
@@ -74,6 +75,7 @@ async function compressImageIfNeeded(file: File): Promise<File> {
         canvas.height = height;
         const ctx = canvas.getContext('2d');
         if (!ctx) {
+          console.error('TieForm: Failed to get canvas context for compression.');
           return reject(new Error('Failed to get canvas context for compression.'));
         }
         ctx.drawImage(img, 0, 0, width, height);
@@ -81,26 +83,25 @@ async function compressImageIfNeeded(file: File): Promise<File> {
         canvas.toBlob(
           (blob) => {
             if (blob) {
-              const compressedFileName = file.name.replace(/\.[^/.]+$/, ".jpg"); // Force jpg for consistent output
+              const compressedFileName = file.name.replace(/\.[^/.]+$/, ".jpg"); 
               const compressedFile = new File([blob], compressedFileName, {
                 type: 'image/jpeg',
                 lastModified: Date.now(),
               });
-              console.log(`Compressed image "${compressedFile.name}" size: ${(compressedFile.size / 1024 / 1024).toFixed(2)} MB`);
+              console.log(`TieForm: Compressed image "${compressedFile.name}" size: ${(compressedFile.size / 1024 / 1024).toFixed(2)} MB`);
               
-              // Use compressed if it's smaller than original, or if original was > 1MB (even if compression didn't make it <1MB but still reduced)
               if (compressedFile.size < file.size || file.size > MAX_IMAGE_SIZE_BYTES) {
                  if(compressedFile.size > MAX_IMAGE_SIZE_BYTES) {
-                    console.warn(`Compressed image is still > 1MB but smaller than original. Using compressed version.`);
+                    console.warn(`TieForm: Compressed image is still > 1MB but smaller than original. Using compressed version.`);
                  }
                 resolve(compressedFile);
               } else {
-                console.warn('Compression did not significantly reduce size or made it larger. Using original.');
+                console.warn('TieForm: Compression did not significantly reduce size or made it larger. Using original.');
                 resolve(file);
               }
             } else {
-              console.error('Canvas toBlob returned null, using original file.');
-              resolve(file); // Fallback to original if blob creation fails
+              console.error('TieForm: Canvas toBlob returned null, using original file.');
+              resolve(file); 
             }
           },
           'image/jpeg',
@@ -108,14 +109,14 @@ async function compressImageIfNeeded(file: File): Promise<File> {
         );
       };
       img.onerror = (err) => {
-        console.error('Image load error during compression, using original file:', err);
-        resolve(file); // Fallback to original on image load error
+        console.error('TieForm: Image load error during compression, using original file:', err);
+        resolve(file); 
       };
       img.src = event.target.result;
     };
     reader.onerror = (err) => {
-      console.error('File read error during compression, using original file:', err);
-      resolve(file); // Fallback to original on file read error
+      console.error('TieForm: File read error during compression, using original file:', err);
+      resolve(file); 
     };
     reader.readAsDataURL(file);
   });
@@ -132,7 +133,6 @@ export function TieForm({
   onDeleteCategory 
 }: TieFormProps) {
   const [previewUrl, setPreviewUrl] = useState<string | null>(initialData?.imageUrl || PLACEHOLDER_IMAGE_URL);
-  // imageFile state is mainly for internal TieForm use now, form.setValue('imageFile',...) will be the source for submission
   const [, setImageFileLocal] = useState<File | null>(null); 
   const [isManageCategoryDialogOpen, setIsManageCategoryDialogOpen] = useState(false);
   const [newCategoryInput, setNewCategoryInput] = useState("");
@@ -146,7 +146,7 @@ export function TieForm({
   const [isWebcamDialogOpen, setIsWebcamDialogOpen] = useState(false);
   const [hasCameraPermission, setHasCameraPermission] = useState<boolean | null>(null);
   const [webcamStream, setWebcamStream] = useState<MediaStream | null>(null);
-  const [capturedImageDataUrl, setCapturedImageDataUrl] = useState<string | null>(null); // For holding temp DataURI from webcam
+  const [capturedImageDataUrl, setCapturedImageDataUrl] = useState<string | null>(null); 
 
   const [videoDevices, setVideoDevices] = useState<MediaDeviceInfo[]>([]);
   const [currentVideoDeviceIndex, setCurrentVideoDeviceIndex] = useState<number>(0);
@@ -165,12 +165,13 @@ export function TieForm({
       unitPrice: initialData?.unitPrice || 0,
       valueInQuantity: initialData?.valueInQuantity || 0,
       category: initialData?.category || (selectDropdownCategories.length > 0 ? selectDropdownCategories[0] : UNCATEGORIZED_LABEL), 
-      imageUrl: initialData?.imageUrl || defaultPlaceholderImage, // This might be a storage URL
-      imageFile: null, // This will hold the File object (original or compressed)
+      imageUrl: initialData?.imageUrl || defaultPlaceholderImage, 
+      imageFile: null, 
     },
   });
 
  useEffect(() => {
+    console.log("TieForm: useEffect - Resetting form with initialData:", initialData, "Current formCategories:", formCategories);
     const defaultCat = formCategories.length > 0 ? formCategories[0] : UNCATEGORIZED_LABEL;
     const initialDisplayImageUrl = initialData?.imageUrl || defaultPlaceholderImage;
     
@@ -182,66 +183,75 @@ export function TieForm({
         category: initialData?.category 
                     ? (formCategories.includes(initialData.category) || initialData.category === UNCATEGORIZED_LABEL ? initialData.category : defaultCat)
                     : defaultCat,
-        imageUrl: initialDisplayImageUrl, // For display if no new file
-        imageFile: null, // Always start with no file selected in form
+        imageUrl: initialDisplayImageUrl, 
+        imageFile: null, 
     });
     setPreviewUrl(initialDisplayImageUrl);
     setImageFileLocal(null);
     setCapturedImageDataUrl(null);
-
+    console.log("TieForm: Form reset complete. PreviewURL:", initialDisplayImageUrl);
   }, [initialData, form, formCategories, defaultPlaceholderImage]);
 
 
   const handleImageChange = async (event: ChangeEvent<HTMLInputElement>) => {
+    console.log("TieForm: handleImageChange triggered.");
     const file = event.target.files?.[0];
     if (file) {
+      console.log("TieForm: File selected:", file.name, file.type);
       if (!file.type.startsWith('image/')) {
         toast({ title: "Formato Inválido", description: "Por favor, selecione um arquivo de imagem.", variant: "destructive" });
         form.setValue('imageFile', null);
+        form.setValue('imageUrl', initialData?.imageUrl || defaultPlaceholderImage);
         setPreviewUrl(initialData?.imageUrl || defaultPlaceholderImage);
+        console.log("TieForm: Invalid file type. Resetting image fields.");
         return;
       }
       try {
         const processedFile = await compressImageIfNeeded(file);
+        console.log("TieForm: Image processed by compressImageIfNeeded. Result:", processedFile);
         setImageFileLocal(processedFile);
-        form.setValue('imageFile', processedFile); // Set the processed file in the form
+        form.setValue('imageFile', processedFile, { shouldValidate: true }); 
         
         const reader = new FileReader();
         reader.onloadend = () => {
           setPreviewUrl(reader.result as string);
+          console.log("TieForm: Preview URL set to:", reader.result as string);
         };
         reader.readAsDataURL(processedFile);
-        setCapturedImageDataUrl(null); // Clear webcam temp image
-        form.setValue('imageUrl', ''); // Clear if we are using imageFile
+        setCapturedImageDataUrl(null); 
+        form.setValue('imageUrl', undefined, { shouldValidate: true }); 
+        console.log("TieForm: imageFile set, imageUrl cleared (set to undefined for Zod default).");
       } catch (error) {
-        console.error("Error processing image:", error);
+        console.error("TieForm: Error processing image:", error);
         toast({ title: "Erro ao Processar Imagem", description: "Não foi possível processar a imagem. Tente outra.", variant: "destructive" });
-        setImageFileLocal(file); // Fallback to original
-        form.setValue('imageFile', file);
+        setImageFileLocal(file); 
+        form.setValue('imageFile', file, { shouldValidate: true });
         const reader = new FileReader();
         reader.onloadend = () => setPreviewUrl(reader.result as string);
         reader.readAsDataURL(file);
         setCapturedImageDataUrl(null);
-        form.setValue('imageUrl', '');
+        form.setValue('imageUrl', undefined, { shouldValidate: true });
       }
     } else {
+      console.log("TieForm: No file selected from input. Resetting imageFile.");
       setImageFileLocal(null);
-      form.setValue('imageFile', null);
-      if (!capturedImageDataUrl) { // Only reset if no webcam pic is active
-        setPreviewUrl(initialData?.imageUrl || defaultPlaceholderImage);
-        form.setValue('imageUrl', initialData?.imageUrl || defaultPlaceholderImage);
+      form.setValue('imageFile', null, { shouldValidate: true });
+      if (!capturedImageDataUrl) { 
+        const fallbackImageUrl = initialData?.imageUrl || defaultPlaceholderImage;
+        setPreviewUrl(fallbackImageUrl);
+        form.setValue('imageUrl', fallbackImageUrl, { shouldValidate: true });
+        console.log("TieForm: No webcam image active, restored imageUrl to:", fallbackImageUrl);
+      } else {
+        console.log("TieForm: Webcam image is active, not changing imageUrl from file input reset.");
       }
     }
   };
 
-  const handleSubmit = (values: TieFormData) => {
-    // The 'values' object from react-hook-form will now contain
-    // 'imageFile' (which is the original or compressed File object)
-    // and 'imageUrl' (which might be an existing storage URL or empty if a new file is chosen).
-    // The parent component (page.tsx) will decide how to use these.
+  const handleSubmitFromHookForm = (values: TieFormData) => {
+    console.log("TieForm: handleSubmitFromHookForm (react-hook-form wrapper) called with values:", JSON.stringify(values, (k, v) => k === 'imageFile' && v ? '[File Object]' : v, 2));
+    console.log("TieForm: Calling props.onSubmit...");
     onSubmit(values);
 
-    // Reset form
     const defaultCat = formCategories.length > 0 ? formCategories[0] : UNCATEGORIZED_LABEL;
     form.reset({
         name: '',
@@ -255,6 +265,7 @@ export function TieForm({
     setPreviewUrl(defaultPlaceholderImage);
     setImageFileLocal(null);
     setCapturedImageDataUrl(null);
+    console.log("TieForm: Form submitted and reset.");
   };
   
   const handleAddNewCategoryInDialog = async () => {
@@ -265,7 +276,7 @@ export function TieForm({
     }
     const success = await onAddCategory(trimmedName);
     if (success) {
-        form.setValue('category', trimmedName);
+        form.setValue('category', trimmedName, { shouldValidate: true });
         setNewCategoryInput('');
     }
   };
@@ -283,7 +294,7 @@ export function TieForm({
         const newDefaultCat = remainingCats.length > 0 
                                 ? remainingCats[0] 
                                 : UNCATEGORIZED_LABEL;
-        form.setValue('category', newDefaultCat);
+        form.setValue('category', newDefaultCat, { shouldValidate: true });
       }
       setCategoryToDelete(null);
     }
@@ -292,13 +303,15 @@ export function TieForm({
 
   const stopWebcam = () => {
     if (webcamStream) {
+      console.log("TieForm: Stopping webcam stream.");
       webcamStream.getTracks().forEach(track => track.stop());
       setWebcamStream(null);
     }
   };
 
   const handleOpenWebcamDialog = async () => {
-    setCapturedImageDataUrl(null); // Clear previous webcam capture
+    console.log("TieForm: handleOpenWebcamDialog called.");
+    setCapturedImageDataUrl(null); 
     setHasCameraPermission(null);
     setIsSwitchingCamera(true);
     setVideoDevices([]); 
@@ -309,6 +322,7 @@ export function TieForm({
 
       const devices = await navigator.mediaDevices.enumerateDevices();
       const availableVideoDevices = devices.filter(d => d.kind === 'videoinput');
+      console.log("TieForm: Available video devices:", availableVideoDevices);
 
       if (availableVideoDevices.length > 0) {
         setVideoDevices(availableVideoDevices);
@@ -319,12 +333,13 @@ export function TieForm({
                  d.label.toLowerCase().includes('webcam')
         );
         setCurrentVideoDeviceIndex(userFacingIndex !== -1 ? userFacingIndex : 0);
+        console.log("TieForm: Selected video device index:", userFacingIndex !== -1 ? userFacingIndex : 0);
       } else {
         toast({ variant: "destructive", title: "Nenhuma câmera encontrada", description: "Nenhum dispositivo de vídeo foi detectado." });
         setHasCameraPermission(false);
       }
     } catch (error: any) {
-      console.error("Error initializing camera devices:", error);
+      console.error("TieForm: Error initializing camera devices:", error);
       setHasCameraPermission(false);
        if (error.name === "NotAllowedError" || error.name === "PermissionDeniedError") {
              toast({
@@ -342,12 +357,14 @@ export function TieForm({
     } finally {
       setIsSwitchingCamera(false);
       setIsWebcamDialogOpen(true); 
+      console.log("TieForm: Webcam dialog opening. SwitchingCamera:", false);
     }
   };
 
   useEffect(() => {
     const manageWebcamStream = async () => {
-      if (!isWebcamDialogOpen || capturedImageDataUrl) { // If dialog closed or image already captured
+      console.log("TieForm: manageWebcamStream useEffect triggered. DialogOpen:", isWebcamDialogOpen, "CapturedDataUrl:", !!capturedImageDataUrl);
+      if (!isWebcamDialogOpen || capturedImageDataUrl) { 
         if (webcamStream) {
           stopWebcam();
         }
@@ -358,14 +375,17 @@ export function TieForm({
         stopWebcam();
       }
       setIsSwitchingCamera(true);
+      console.log("TieForm: manageWebcamStream - attempting to start new stream. SwitchingCamera: true");
 
       try {
         let devicesToUse = videoDevices;
         if (devicesToUse.length === 0 && hasCameraPermission !== false) {
+          console.log("TieForm: manageWebcamStream - no devices in state, trying to enumerate again.");
           const tempStreamForPerm = await navigator.mediaDevices.getUserMedia({ video: true });
           tempStreamForPerm.getTracks().forEach(track => track.stop());
           const enumeratedDevices = await navigator.mediaDevices.enumerateDevices();
           const availableVideoDevices = enumeratedDevices.filter(d => d.kind === 'videoinput');
+          console.log("TieForm: manageWebcamStream - re-enumerated devices:", availableVideoDevices);
           if (availableVideoDevices.length === 0) {
             toast({ variant: "destructive", title: "Nenhuma câmera encontrada" });
             setHasCameraPermission(false); setIsSwitchingCamera(false); return;
@@ -374,18 +394,22 @@ export function TieForm({
           devicesToUse = availableVideoDevices;
           if (currentVideoDeviceIndex >= availableVideoDevices.length && availableVideoDevices.length > 0) {
             setCurrentVideoDeviceIndex(0);
+            console.log("TieForm: manageWebcamStream - reset currentVideoDeviceIndex to 0.");
           }
         }
         
         if (devicesToUse.length === 0) {
              toast({ variant: "destructive", title: "Câmeras não carregadas"});
-             setHasCameraPermission(false); setIsSwitchingCamera(false); return;
+             setHasCameraPermission(false); setIsSwitchingCamera(false); 
+             console.log("TieForm: manageWebcamStream - no devices to use after checks.");
+             return;
         }
 
         const deviceIdToUse = devicesToUse[currentVideoDeviceIndex]?.deviceId;
+        console.log("TieForm: manageWebcamStream - attempting to use deviceId:", deviceIdToUse, "at index:", currentVideoDeviceIndex);
 
         if (!deviceIdToUse) {
-            console.warn("Target deviceId not found. Current index:", currentVideoDeviceIndex, "Devices:", devicesToUse);
+            console.warn("TieForm: manageWebcamStream - Target deviceId not found. Current index:", currentVideoDeviceIndex, "Devices:", devicesToUse);
             if (devicesToUse.length > 0) {
                 setCurrentVideoDeviceIndex(0); 
                 setIsSwitchingCamera(false); 
@@ -399,10 +423,11 @@ export function TieForm({
         const stream = await navigator.mediaDevices.getUserMedia({
           video: { 
             deviceId: { exact: deviceIdToUse },
-            width: { ideal: 1920 }, // Request higher res
+            width: { ideal: 1920 }, 
             height: { ideal: 1080 } 
           }
         });
+        console.log("TieForm: manageWebcamStream - camera stream acquired.");
         setHasCameraPermission(true);
         setWebcamStream(stream);
         if (videoRef.current) {
@@ -410,7 +435,7 @@ export function TieForm({
         }
 
       } catch (error: any) {
-        console.error('Error accessing camera:', error);
+        console.error('TieForm: manageWebcamStream - Error accessing camera:', error);
         setHasCameraPermission(false);
         const errName = error.name || '';
         const errMessage = error.message || 'Erro desconhecido.';
@@ -423,6 +448,7 @@ export function TieForm({
         }
       } finally {
         setIsSwitchingCamera(false);
+        console.log("TieForm: manageWebcamStream - finished. SwitchingCamera: false");
       }
     };
 
@@ -435,73 +461,83 @@ export function TieForm({
         stopWebcam();
       }
     };
-  }, [isWebcamDialogOpen, capturedImageDataUrl, currentVideoDeviceIndex]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isWebcamDialogOpen, capturedImageDataUrl, currentVideoDeviceIndex, videoDevices]); // Added videoDevices to dependencies as it's now managed more dynamically
 
 
   const handleSwitchCamera = () => {
     if (videoDevices.length > 1 && !isSwitchingCamera) {
+      console.log("TieForm: handleSwitchCamera called.");
       setCapturedImageDataUrl(null); 
       const nextIndex = (currentVideoDeviceIndex + 1) % videoDevices.length;
       setCurrentVideoDeviceIndex(nextIndex); 
+      console.log("TieForm: Switched camera to index:", nextIndex);
     }
   };
 
   const handleCaptureImage = () => {
+    console.log("TieForm: handleCaptureImage called.");
     if (videoRef.current && canvasRef.current && webcamStream) {
       const video = videoRef.current;
       const canvas = canvasRef.current;
-      // Set canvas dimensions to video's intrinsic dimensions for best quality capture
       canvas.width = video.videoWidth;
       canvas.height = video.videoHeight;
       const context = canvas.getContext('2d');
       if (context) {
         context.drawImage(video, 0, 0, canvas.width, canvas.height);
-        const dataUrl = canvas.toDataURL('image/jpeg', 0.9); // Capture as JPEG with high quality
-        setCapturedImageDataUrl(dataUrl); // Store temp DataURI
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.9); 
+        setCapturedImageDataUrl(dataUrl); 
+        console.log("TieForm: Image captured from webcam.");
       }
     } else {
       toast({ variant: "destructive", title: "Erro ao capturar", description: "Não foi possível acessar a stream de vídeo."});
+      console.error("TieForm: Failed to capture image, videoRef, canvasRef or webcamStream not available.");
     }
   };
 
   const handleRetakePhoto = () => {
+    console.log("TieForm: handleRetakePhoto called.");
     setCapturedImageDataUrl(null); 
   };
 
   const handleUseCapturedImage = async () => {
+    console.log("TieForm: handleUseCapturedImage called.");
     if (capturedImageDataUrl) {
       try {
         const blob = await dataURItoBlobInForm(capturedImageDataUrl);
-        // Create a filename that suggests it's a webcam capture and will be JPEG
         const filename = `webcam_capture_${Date.now()}.jpg`;
         const tempFile = new File([blob], filename, { type: 'image/jpeg' });
+        console.log("TieForm: Webcam image converted to File:", tempFile);
         
         const processedFile = await compressImageIfNeeded(tempFile);
+        console.log("TieForm: Webcam image processed by compressImageIfNeeded. Result:", processedFile);
         setImageFileLocal(processedFile);
-        form.setValue('imageFile', processedFile);
+        form.setValue('imageFile', processedFile, { shouldValidate: true });
         
         const reader = new FileReader();
         reader.onloadend = () => {
           setPreviewUrl(reader.result as string);
+          console.log("TieForm: Preview URL set from captured webcam image:", reader.result as string);
         };
         reader.readAsDataURL(processedFile);
 
-        setCapturedImageDataUrl(null); // Clear temp DataURI
-        form.setValue('imageUrl', ''); // Clear if using imageFile
+        setCapturedImageDataUrl(null); 
+        form.setValue('imageUrl', undefined, { shouldValidate: true }); // Clear imageUrl if using imageFile
+        console.log("TieForm: imageFile set from webcam, imageUrl cleared (set to undefined for Zod default).");
         
         setIsWebcamDialogOpen(false);
         stopWebcam();
 
       } catch (error) {
-        console.error("Error processing webcam image:", error);
+        console.error("TieForm: Error processing webcam image:", error);
         toast({ title: "Erro ao Processar Foto", description: "Não foi possível processar a foto da webcam. Tente novamente.", variant: "destructive" });
-        // As a fallback, we might just use the capturedImageDataUrl directly without compression for the preview
-        // and let the parent component decide. Or create a File from the original captured DataURI.
-        const blob = await dataURItoBlobInForm(capturedImageDataUrl);
-        const tempFile = new File([blob], `webcam_capture_${Date.now()}.jpg`, { type: 'image/jpeg' });
+        // Fallback logic
+        const blob = await dataURItoBlobInForm(capturedImageDataUrl); // Ensure this doesn't fail if first one did
+        const tempFile = new File([blob], `webcam_capture_fallback_${Date.now()}.jpg`, { type: 'image/jpeg' });
         setImageFileLocal(tempFile);
-        form.setValue('imageFile', tempFile);
+        form.setValue('imageFile', tempFile, { shouldValidate: true });
         setPreviewUrl(capturedImageDataUrl);
+        form.setValue('imageUrl', undefined, { shouldValidate: true });
         
         setIsWebcamDialogOpen(false);
         stopWebcam();
@@ -512,7 +548,7 @@ export function TieForm({
   return (
     <>
     <Form {...form}>
-      <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-6">
+      <form onSubmit={form.handleSubmit(handleSubmitFromHookForm)} className="space-y-6">
         <Card className="shadow-none border-none"> 
           <CardContent className="p-0">
             <ScrollArea className="h-[calc(90vh-220px)] md:h-[calc(70vh-100px)] pr-4">
@@ -632,14 +668,14 @@ export function TieForm({
               />
               
               <FormItem>
-                <FormLabel>Imagem</FormLabel>
+                <FormLabel htmlFor="imageFile">Imagem</FormLabel>
                 <div className="flex items-center gap-2">
                     <Input 
                         type="file" 
                         accept="image/*" 
                         onChange={handleImageChange} 
                         className="dark:file:text-primary-foreground"
-                        id="imageFile" // Ensure ID for label association if using a separate label element
+                        id="imageFile" 
                     />
                     <Button type="button" variant="outline" size="icon" onClick={handleOpenWebcamDialog} aria-label="Tirar Foto">
                         <Camera size={16} />
@@ -658,8 +694,13 @@ export function TieForm({
                 )}
                 <FormField
                     control={form.control}
-                    name="imageFile"
-                    render={() => <FormMessage />} // For displaying errors related to imageFile if any
+                    name="imageFile" // This field is for the File object
+                    render={({ fieldState }) => <FormMessage>{fieldState.error?.message}</FormMessage>} 
+                />
+                 <FormField
+                    control={form.control}
+                    name="imageUrl" // This field is for the URL string
+                    render={({ fieldState }) => <FormMessage>{fieldState.error?.message}</FormMessage>}
                 />
               </FormItem>
             </div>
@@ -809,6 +850,3 @@ export function TieForm({
     </>
   );
 }
-
-
-    
