@@ -2,7 +2,7 @@
 "use client";
 
 import type { ChangeEvent } from 'react';
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import Image from 'next/image';
@@ -16,7 +16,7 @@ import { TieSchema, UNCATEGORIZED_LABEL } from '@/lib/types';
 import { Card, CardContent } from '@/components/ui/card';
 import { ScrollArea } from './ui/scroll-area';
 import { ImageUp, Plus, Trash2, Coins, Camera, Check, RefreshCcw, VideoOff, RefreshCw } from 'lucide-react';
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog'; // Removed AlertDialogTrigger as it's not used directly here for manage category
 import { useToast } from '@/hooks/use-toast';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 
@@ -39,7 +39,7 @@ export function TieForm({
   onAddCategory, 
   onDeleteCategory 
 }: TieFormProps) {
-  const [previewUrl, setPreviewUrl] = useState<string | null>(initialData?.imageUrl || null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(initialData?.imageUrl || `https://placehold.co/300x400.png`);
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [isManageCategoryDialogOpen, setIsManageCategoryDialogOpen] = useState(false);
   const [newCategoryInput, setNewCategoryInput] = useState("");
@@ -59,6 +59,7 @@ export function TieForm({
   const [currentVideoDeviceIndex, setCurrentVideoDeviceIndex] = useState<number>(0);
   const [isSwitchingCamera, setIsSwitchingCamera] = useState<boolean>(false);
 
+  const defaultPlaceholderImage = `https://placehold.co/300x400.png`;
 
   const selectDropdownCategories = formCategories; 
   const categoriesForManagementDialog = allCategoriesForManagement;
@@ -71,13 +72,14 @@ export function TieForm({
       unitPrice: initialData?.unitPrice || 0,
       valueInQuantity: initialData?.valueInQuantity || 0,
       category: initialData?.category || (selectDropdownCategories.length > 0 ? selectDropdownCategories[0] : UNCATEGORIZED_LABEL), 
-      imageUrl: initialData?.imageUrl || `https://placehold.co/300x400.png`,
+      imageUrl: initialData?.imageUrl || defaultPlaceholderImage,
       imageFile: null,
     },
   });
 
   useEffect(() => {
     const defaultCat = formCategories.length > 0 ? formCategories[0] : UNCATEGORIZED_LABEL;
+    const initialImageUrl = initialData?.imageUrl || defaultPlaceholderImage;
     if (initialData) {
         form.reset({
             ...initialData,
@@ -85,9 +87,10 @@ export function TieForm({
             category: formCategories.includes(initialData.category) 
                         ? initialData.category 
                         : (initialData.category === UNCATEGORIZED_LABEL ? UNCATEGORIZED_LABEL : defaultCat),
+            imageUrl: initialImageUrl,
             imageFile: null, 
         });
-        setPreviewUrl(initialData.imageUrl || null);
+        setPreviewUrl(initialImageUrl);
     } else {
         form.reset({
             name: '',
@@ -95,12 +98,12 @@ export function TieForm({
             unitPrice: 0,
             valueInQuantity: 0,
             category: defaultCat,
-            imageUrl: `https://placehold.co/300x400.png`,
+            imageUrl: defaultPlaceholderImage,
             imageFile: null,
         });
-        setPreviewUrl(null);
+        setPreviewUrl(defaultPlaceholderImage); // Show placeholder initially for new ties
     }
-  }, [initialData, form, formCategories]);
+  }, [initialData, form, formCategories, defaultPlaceholderImage]);
 
 
   const handleImageChange = (event: ChangeEvent<HTMLInputElement>) => {
@@ -115,21 +118,35 @@ export function TieForm({
       setCapturedImageDataUrl(null); 
     } else {
       setImageFile(null);
-      if (!capturedImageDataUrl) {
-        setPreviewUrl(initialData?.imageUrl || `https://placehold.co/300x400.png`);
+      if (!capturedImageDataUrl) { // Only reset if no webcam pic is active
+        setPreviewUrl(initialData?.imageUrl || defaultPlaceholderImage);
       }
     }
   };
 
   const handleSubmit = (values: TieFormData) => {
+    // If an imageFile is present, it means a new file was selected.
+    // If capturedImageDataUrl is present, it means a photo was taken.
+    // Otherwise, use existing values.imageUrl or default placeholder.
+    let finalImageUrl = values.imageUrl || defaultPlaceholderImage; // Start with current or placeholder
+    if (imageFile) { // New file selected, this takes precedence
+        // The actual Data URI generation for imageFile will be handled by processImageAndGetUrl in parent
+        // Here we just pass the file.
+    } else if (capturedImageDataUrl) { // Webcam photo taken
+        finalImageUrl = capturedImageDataUrl;
+    }
+
+
     const dataToSubmit: TieFormData = {
       ...values,
       valueInQuantity: values.valueInQuantity || 0,
       category: values.category || UNCATEGORIZED_LABEL,
-      imageFile: imageFile, 
-      imageUrl: previewUrl || `https://placehold.co/300x400.png`
+      imageFile: imageFile, // Pass the file if selected
+      imageUrl: finalImageUrl // This will be Data URI if webcam used, or original URL, or placeholder
     };
     onSubmit(dataToSubmit);
+
+    // Reset form
     const defaultCat = formCategories.length > 0 ? formCategories[0] : UNCATEGORIZED_LABEL;
     form.reset({
         name: '',
@@ -137,10 +154,10 @@ export function TieForm({
         unitPrice: 0,
         valueInQuantity: 0,
         category: defaultCat,
-        imageUrl: `https://placehold.co/300x400.png`,
+        imageUrl: defaultPlaceholderImage,
         imageFile: null,
     });
-    setPreviewUrl(null);
+    setPreviewUrl(defaultPlaceholderImage);
     setImageFile(null);
     setCapturedImageDataUrl(null);
   };
@@ -287,8 +304,8 @@ export function TieForm({
         const stream = await navigator.mediaDevices.getUserMedia({
           video: { 
             deviceId: { exact: deviceIdToUse },
-            width: { ideal: 4096 }, // Request ideal 4K width
-            height: { ideal: 2160 } // Request ideal 4K height
+            width: { ideal: 4096 }, 
+            height: { ideal: 2160 } 
           }
         });
         setHasCameraPermission(true);
@@ -314,14 +331,16 @@ export function TieForm({
       }
     };
 
-    manageWebcamStream();
+    if (isWebcamDialogOpen) {
+      manageWebcamStream();
+    }
 
     return () => { 
       if (webcamStream) {
         stopWebcam();
       }
     };
-  }, [isWebcamDialogOpen, capturedImageDataUrl, currentVideoDeviceIndex]); 
+  }, [isWebcamDialogOpen, capturedImageDataUrl, currentVideoDeviceIndex]); // Removed videoDevices from deps to avoid re-triggering when it's set inside
 
 
   const handleSwitchCamera = () => {
@@ -336,13 +355,12 @@ export function TieForm({
     if (videoRef.current && canvasRef.current && webcamStream) {
       const video = videoRef.current;
       const canvas = canvasRef.current;
-      // Set canvas dimensions to the actual video stream dimensions for full resolution
       canvas.width = video.videoWidth;
       canvas.height = video.videoHeight;
       const context = canvas.getContext('2d');
       if (context) {
         context.drawImage(video, 0, 0, canvas.width, canvas.height);
-        const dataUrl = canvas.toDataURL('image/webp'); // WebP for good quality and compression
+        const dataUrl = canvas.toDataURL('image/webp');
         setCapturedImageDataUrl(dataUrl);
       }
     } else {
@@ -357,10 +375,12 @@ export function TieForm({
   const handleUseCapturedImage = () => {
     if (capturedImageDataUrl) {
       setPreviewUrl(capturedImageDataUrl);
-      setImageFile(null); 
-      form.setValue('imageUrl', capturedImageDataUrl);
+      setImageFile(null); // Clear any selected file if webcam image is used
+      form.setValue('imageUrl', capturedImageDataUrl); // Set form value directly for submission
       form.setValue('imageFile', null);
       setIsWebcamDialogOpen(false); 
+      // Stop webcam after using the image
+      stopWebcam();
     }
   };
   
@@ -523,10 +543,13 @@ export function TieForm({
 
     <canvas ref={canvasRef} style={{ display: 'none' }} />
 
-    <AlertDialog open={isWebcamDialogOpen} onOpenChange={setIsWebcamDialogOpen}>
+    <AlertDialog open={isWebcamDialogOpen} onOpenChange={(open) => { setIsWebcamDialogOpen(open); if (!open) stopWebcam(); }}>
       <AlertDialogContent className="sm:max-w-lg">
         <AlertDialogHeader>
           <AlertDialogTitle>Tirar Foto com Webcam</AlertDialogTitle>
+          <AlertDialogDescription>
+            Posicione a gravata e capture a imagem. Você pode trocar de câmera se houver mais de uma disponível.
+          </AlertDialogDescription>
         </AlertDialogHeader>
         <div className="py-4 space-y-4">
           {hasCameraPermission === false && (
@@ -545,12 +568,10 @@ export function TieForm({
             </div>
           )}
           
-          {/* Video display area */}
           <div className={`bg-muted rounded-md overflow-hidden border ${hasCameraPermission && !capturedImageDataUrl ? 'block' : 'hidden'}`}>
             <video ref={videoRef} autoPlay playsInline muted className="w-full aspect-[3/4] object-cover" />
           </div>
 
-          {/* Captured image display area */}
           {capturedImageDataUrl && (
             <div className="bg-muted rounded-md overflow-hidden border">
               <Image src={capturedImageDataUrl} alt="Foto Capturada" width={480} height={640} className="w-full aspect-[3/4] object-cover" data-ai-hint="gravata moda"/>
@@ -566,7 +587,7 @@ export function TieForm({
                 )}
             </div>
             <div className="flex gap-2 flex-col sm:flex-row">
-                <AlertDialogCancel onClick={() => setIsWebcamDialogOpen(false)} className="w-full sm:w-auto">Fechar</AlertDialogCancel>
+                <AlertDialogCancel onClick={() => { setIsWebcamDialogOpen(false); stopWebcam(); }} className="w-full sm:w-auto">Fechar</AlertDialogCancel>
                 {hasCameraPermission && !capturedImageDataUrl && (
                     <Button onClick={handleCaptureImage} disabled={isSwitchingCamera} className="w-full sm:w-auto">
                     <Camera size={16} className="mr-2" /> Capturar Imagem
@@ -592,7 +613,7 @@ export function TieForm({
             <AlertDialogHeader>
             <AlertDialogTitle>Gerenciar Categorias</AlertDialogTitle>
             <AlertDialogDescription>
-                Adicione uma nova categoria ou remova existentes.
+                Adicione uma nova categoria ou remova categorias existentes da sua lista pessoal.
             </AlertDialogDescription>
             </AlertDialogHeader>
             <div className="space-y-4 py-2">
@@ -642,8 +663,8 @@ export function TieForm({
             <AlertDialogTitle>Confirmar Remoção</AlertDialogTitle>
             <AlertDialogDescription>
               {categoryToDelete === UNCATEGORIZED_LABEL
-                ? `Tem certeza que deseja remover a categoria "${UNCATEGORIZED_LABEL}"? Gravatas nesta categoria manterão esta designação em seus dados, mas a categoria não será uma opção de filtro até ser recriada ou uma nova gravata ser adicionada sem categoria.`
-                : `Tem certeza que deseja remover a categoria "${categoryToDelete}"? As gravatas nesta categoria serão movidas para "${UNCATEGORIZED_LABEL}".`}
+                ? `Tem certeza que deseja remover a categoria "${UNCATEGORIZED_LABEL}" dos filtros? Gravatas nesta categoria manterão esta designação até serem editadas ou a categoria ser recriada.`
+                : `Tem certeza que deseja remover a categoria "${categoryToDelete}"? As gravatas atualmente nesta categoria serão movidas para "${UNCATEGORIZED_LABEL}".`}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -655,8 +676,3 @@ export function TieForm({
     </>
   );
 }
-
-
-    
-
-      

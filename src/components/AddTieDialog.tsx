@@ -2,7 +2,7 @@
 "use client";
 
 import React, { useMemo } from 'react';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogTrigger } from '@/components/ui/dialog';
 import { TieForm } from './TieForm';
 import type { TieFormData, TieCategory } from '@/lib/types';
 import { UNCATEGORIZED_LABEL } from '@/lib/types';
@@ -13,7 +13,7 @@ interface AddTieDialogProps {
   onSubmit: (data: TieFormData) => void;
   initialData?: TieFormData;
   trigger?: React.ReactNode;
-  allCategories: TieCategory[]; // This prop is kept from the previous state
+  allCategories: TieCategory[];
   onAddCategory: (categoryName: string) => Promise<boolean>;
   onDeleteCategory: (categoryName: TieCategory) => void;
 }
@@ -24,7 +24,7 @@ export function AddTieDialog({
   onSubmit, 
   initialData, 
   trigger, 
-  allCategories, // Prop remains
+  allCategories,
   onAddCategory,
   onDeleteCategory
 }: AddTieDialogProps) {
@@ -37,7 +37,6 @@ export function AddTieDialog({
     onOpenChange(false);
   }
 
-  // Reverted: Compute formCategories and allCategoriesForManagement for TieForm
   const formCategoriesForDropdown = useMemo(() => {
     return allCategories.filter(cat => cat.toLowerCase() !== 'todas');
   }, [allCategories]);
@@ -52,12 +51,14 @@ export function AddTieDialog({
       <DialogContent className="sm:max-w-[600px] max-h-[90vh]">
         <DialogHeader>
           <DialogTitle>{initialData?.id ? 'Editar Gravata' : 'Adicionar Nova Gravata'}</DialogTitle>
+          <DialogDescription>
+            {initialData?.id ? 'Modifique os detalhes da gravata abaixo.' : 'Preencha os detalhes abaixo para adicionar uma nova gravata ao seu inventário.'}
+          </DialogDescription>
         </DialogHeader>
         <TieForm 
           onSubmit={internalSubmit} 
           initialData={initialData} 
           onCancel={handleCancel}
-          // Reverted: Pass specific category lists
           formCategories={formCategoriesForDropdown}
           allCategoriesForManagement={categoriesForManagementDialog}
           onAddCategory={onAddCategory}

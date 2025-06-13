@@ -50,7 +50,6 @@ import {
 
 const defaultCategoriesForSeed: TieCategory[] = ['Lisa', 'Listrada', 'Pontilhada'];
 
-// New component to contain the main layout and use the sidebar context
 function MainContentLayout({
   currentUser,
   ties,
@@ -65,8 +64,6 @@ function MainContentLayout({
   openAddDialog,
   handleEditTie,
   handleDeleteTie,
-  handleAddCategory,
-  handleDeleteCategoryRequest,
 }: {
   currentUser: FirebaseUser;
   ties: Tie[];
@@ -81,9 +78,6 @@ function MainContentLayout({
   openAddDialog: () => void;
   handleEditTie: (tie: Tie) => void;
   handleDeleteTie: (id: string) => void;
-  handleAddCategory: (categoryName: string) => Promise<boolean>;
-  onDeleteCategory: (categoryName: TieCategory) => void; // Renamed for clarity
-  handleDeleteCategoryRequest: (category: TieCategory) => void;
 }) {
   const { toggleSidebar } = useSidebar();
 
@@ -196,8 +190,8 @@ function MainContentLayout({
 export default function HomePage() {
   const router = useRouter();
   const [currentUser, setCurrentUser] = useState<FirebaseUser | null>(null);
-  const [authChecked, setAuthChecked] = useState<boolean>(false); // Tracks if initial auth check is done
-  const [isClientLoaded, setIsClientLoaded] = useState<boolean>(false); // Tracks if client effects have run
+  const [authChecked, setAuthChecked] = useState<boolean>(false);
+  const [isClientLoaded, setIsClientLoaded] = useState<boolean>(false);
 
   const [ties, setTies] = useState<Tie[]>([]); 
   const [categories, setCategories] = useState<TieCategory[]>([]);
@@ -216,7 +210,7 @@ export default function HomePage() {
   const auth = getAuth(app);
 
   useEffect(() => {
-    setIsClientLoaded(true); // Mark client as loaded once component mounts
+    setIsClientLoaded(true);
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       if (user) {
         setCurrentUser(user);
@@ -230,7 +224,7 @@ export default function HomePage() {
   }, [router, auth]);
 
   useEffect(() => {
-    if (isClientLoaded) { // Only run if client has loaded
+    if (isClientLoaded) {
       setCurrentYear(new Date().getFullYear());
     }
   }, [isClientLoaded]);
@@ -246,6 +240,7 @@ export default function HomePage() {
     }
     
     const fetchData = async () => {
+      if (!currentUser?.uid) return;
       setIsLoadingData(true);
       try {
         const userUid = currentUser.uid;
@@ -300,22 +295,30 @@ export default function HomePage() {
 
   }, [ties, categories, isLoadingData, isClientLoaded, authChecked, currentUser, categoryToDelete]);
 
-
+  // This function is a placeholder. For real image uploads, use Firebase Storage.
   const processImageAndGetUrl = async (imageFile: File | null | undefined, currentImageUrl?: string): Promise<string> => {
     if (imageFile) {
+      // Simulating an upload process and returning a data URI.
+      // WARNING: This will likely exceed Firestore document size limits for large images.
+      // A real implementation should upload to Firebase Storage and return the storage URL.
       return new Promise((resolve) => {
         const reader = new FileReader();
         reader.onloadend = () => {
           resolve(reader.result as string);
         };
+        reader.onerror = () => {
+           resolve(currentImageUrl || `https://placehold.co/300x400.png`);
+        }
         reader.readAsDataURL(imageFile);
       });
     }
-    return currentImageUrl || `https://placehold.co/300x400.png`;
+    // If no new image file, and no currentImageUrl, use placeholder.
+    // If there's a currentImageUrl (e.g. from editing an existing tie), keep it.
+    return currentImageUrl || `https://placehold.co/300x400.png`; 
   };
 
   const handleAddCategory = useCallback(async (categoryName: string): Promise<boolean> => {
-    if (!isClientLoaded || !authChecked || !currentUser) return false;
+    if (!isClientLoaded || !authChecked || !currentUser?.uid) return false;
     const trimmedName = categoryName.trim();
     if (!trimmedName) {
       toast({ title: "Erro", description: "O nome da categoria não pode estar vazio.", variant: "destructive" });
@@ -344,7 +347,7 @@ export default function HomePage() {
   };
 
   const handleDeleteCategory = useCallback(async () => {
-    if (!isClientLoaded || !authChecked || !currentUser || !categoryToDelete) return;
+    if (!isClientLoaded || !authChecked || !currentUser?.uid || !categoryToDelete) return;
 
     const categoryBeingDeleted = categoryToDelete;
 
@@ -391,9 +394,23 @@ export default function HomePage() {
 
 
   const handleFormSubmit = useCallback(async (data: TieFormData) => {
-    if (!isClientLoaded || !authChecked || !currentUser) return;
+    if (!isClientLoaded || !authChecked || !currentUser?.uid) return;
     
-    const finalImageUrl = await processImageAndGetUrl(data.imageFile, data.imageUrl);
+    // Crucial: For production, imageFile should be uploaded to Firebase Storage,
+    // and finalImageUrl should be the Storage URL.
+    // For now, processImageAndGetUrl still returns a Data URI which can be too large for Firestore.
+    // If data.imageFile is null/undefined AND data.imageUrl is already a placeholder OR a valid (short) URL, use that.
+    // Otherwise, if a new image file is provided, it will be processed.
+    let finalImageUrl = data.imageUrl || `https://placehold.co/300x400.png`;
+    if (data.imageFile) {
+        finalImageUrl = await processImageAndGetUrl(data.imageFile, data.imageUrl);
+    } else if (!data.imageUrl || data.imageUrl.startsWith('data:')) {
+        // If imageUrl is missing or is a (potentially long) data URI from a previous state without a new file, default to placeholder
+        // This is a safety net. Ideally, `initialData.imageUrl` when editing would already be a short storage URL.
+        finalImageUrl = `https://placehold.co/300x400.png`;
+    }
+
+
     const tieCategory = data.category && data.category.trim() !== "" ? data.category : UNCATEGORIZED_LABEL;
 
     const tieDataForSave = {
@@ -402,7 +419,7 @@ export default function HomePage() {
       unitPrice: data.unitPrice!,
       valueInQuantity: data.valueInQuantity || 0,
       category: tieCategory,
-      imageUrl: finalImageUrl,
+      imageUrl: finalImageUrl, // This could still be a long Data URI if an image was selected/captured
     };
 
     try {
@@ -421,9 +438,26 @@ export default function HomePage() {
         setCategories(prevCategories => Array.from(new Set([...prevCategories, tieCategory])).sort());
       }
 
-    } catch (error) {
+    } catch (error: any) {
       console.error("Erro ao salvar gravata no Firestore:", error);
-      toast({ title: "Erro no Servidor", description: "Não foi possível salvar a gravata.", variant: "destructive" });
+      let description = "Não foi possível salvar a gravata.";
+      if (error.message && error.message.includes("longer than 1048487 bytes")) {
+        description = "A imagem é muito grande. Por favor, use uma imagem menor ou aguarde a implementação do upload otimizado. A gravata foi salva com uma imagem placeholder.";
+        // Fallback: Save with placeholder if image was the issue
+         try {
+            const fallbackData = {...tieDataForSave, imageUrl: `https://placehold.co/300x400.png`};
+            if (editingTie?.id) {
+                 await updateTieInFirestore(currentUser.uid, editingTie.id, fallbackData);
+                 setTies(prevTies => prevTies.map(t => t.id === editingTie.id ? { ...fallbackData, id: editingTie.id! } : t));
+            } else {
+                const newTie = await addTieToFirestore(currentUser.uid, fallbackData);
+                setTies(prevTies => [newTie, ...prevTies]);
+            }
+         } catch (fallbackError) {
+            console.error("Erro ao salvar gravata com placeholder:", fallbackError);
+         }
+      }
+      toast({ title: "Erro no Servidor", description, variant: "destructive" });
     }
 
     setEditingTie(undefined);
@@ -436,7 +470,7 @@ export default function HomePage() {
   };
 
   const handleDeleteTie = async (id: string) => {
-    if (!isClientLoaded || !authChecked || !currentUser) return;
+    if (!isClientLoaded || !authChecked || !currentUser?.uid) return;
     const tieToDelete = ties.find(t => t.id === id);
     
     try {
@@ -476,7 +510,7 @@ export default function HomePage() {
   }
   
   return (
-    <SidebarProvider defaultOpen={false}> {/* Sidebar starts closed */}
+    <SidebarProvider defaultOpen={false}>
       <MainContentLayout
         currentUser={currentUser}
         ties={ties}
@@ -491,8 +525,6 @@ export default function HomePage() {
         openAddDialog={openAddDialog}
         handleEditTie={handleEditTie}
         handleDeleteTie={handleDeleteTie}
-        handleAddCategory={handleAddCategory}
-        handleDeleteCategoryRequest={handleDeleteCategoryRequest}
       />
       
       <AddTieDialog
@@ -502,7 +534,7 @@ export default function HomePage() {
           initialData={editingTie}
           allCategories={categories.filter(cat => cat !== UNCATEGORIZED_LABEL && cat.toLowerCase() !== 'todas')}
           onAddCategory={handleAddCategory}
-          onDeleteCategory={handleDeleteCategoryRequest} // Passed correctly
+          onDeleteCategory={handleDeleteCategoryRequest}
       />
 
       <AlertDialog open={isConfirmDeleteCategoryOpen} onOpenChange={setIsConfirmDeleteCategoryOpen}>
