@@ -12,11 +12,11 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import type { TieFormData, TieCategory } from '@/lib/types';
-import { TieSchema, UNCATEGORIZED_LABEL } from '@/lib/types';
+import { TieSchema, UNCATEGORIZED_LABEL, PLACEHOLDER_IMAGE_URL } from '@/lib/types';
 import { Card, CardContent } from '@/components/ui/card';
 import { ScrollArea } from './ui/scroll-area';
 import { ImageUp, Plus, Trash2, Coins, Camera, Check, RefreshCcw, VideoOff, RefreshCw } from 'lucide-react';
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog'; // Removed AlertDialogTrigger as it's not used directly here for manage category
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { useToast } from '@/hooks/use-toast';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 
@@ -30,6 +30,98 @@ interface TieFormProps {
   onDeleteCategory: (categoryName: TieCategory) => void;
 }
 
+const MAX_IMAGE_SIZE_BYTES = 1 * 1024 * 1024; // 1MB
+const TARGET_COMPRESSION_QUALITY = 0.7;
+const MAX_DIMENSION = 1200; // Max width or height for resizing
+
+async function dataURItoBlobInForm(dataURI: string): Promise<Blob> {
+  const response = await fetch(dataURI);
+  const blob = await response.blob();
+  return blob;
+}
+
+async function compressImageIfNeeded(file: File): Promise<File> {
+  if (!file.type.startsWith('image/') || file.size <= MAX_IMAGE_SIZE_BYTES) {
+    console.log(`Image "${file.name}" is small enough or not an image, using original. Size: ${(file.size / 1024 / 1024).toFixed(2)} MB`);
+    return file;
+  }
+
+  console.log(`Original image "${file.name}" size: ${(file.size / 1024 / 1024).toFixed(2)} MB. Compressing...`);
+
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      if (!event.target?.result || typeof event.target.result !== 'string') {
+        return reject(new Error('Failed to read image file for compression.'));
+      }
+      const img = new Image();
+      img.onload = () => {
+        let { width, height } = img;
+        const aspectRatio = width / height;
+
+        if (width > MAX_DIMENSION || height > MAX_DIMENSION) {
+          if (width > height) {
+            width = MAX_DIMENSION;
+            height = Math.round(width / aspectRatio);
+          } else {
+            height = MAX_DIMENSION;
+            width = Math.round(height * aspectRatio);
+          }
+        }
+
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          return reject(new Error('Failed to get canvas context for compression.'));
+        }
+        ctx.drawImage(img, 0, 0, width, height);
+
+        canvas.toBlob(
+          (blob) => {
+            if (blob) {
+              const compressedFileName = file.name.replace(/\.[^/.]+$/, ".jpg"); // Force jpg for consistent output
+              const compressedFile = new File([blob], compressedFileName, {
+                type: 'image/jpeg',
+                lastModified: Date.now(),
+              });
+              console.log(`Compressed image "${compressedFile.name}" size: ${(compressedFile.size / 1024 / 1024).toFixed(2)} MB`);
+              
+              // Use compressed if it's smaller than original, or if original was > 1MB (even if compression didn't make it <1MB but still reduced)
+              if (compressedFile.size < file.size || file.size > MAX_IMAGE_SIZE_BYTES) {
+                 if(compressedFile.size > MAX_IMAGE_SIZE_BYTES) {
+                    console.warn(`Compressed image is still > 1MB but smaller than original. Using compressed version.`);
+                 }
+                resolve(compressedFile);
+              } else {
+                console.warn('Compression did not significantly reduce size or made it larger. Using original.');
+                resolve(file);
+              }
+            } else {
+              console.error('Canvas toBlob returned null, using original file.');
+              resolve(file); // Fallback to original if blob creation fails
+            }
+          },
+          'image/jpeg',
+          TARGET_COMPRESSION_QUALITY
+        );
+      };
+      img.onerror = (err) => {
+        console.error('Image load error during compression, using original file:', err);
+        resolve(file); // Fallback to original on image load error
+      };
+      img.src = event.target.result;
+    };
+    reader.onerror = (err) => {
+      console.error('File read error during compression, using original file:', err);
+      resolve(file); // Fallback to original on file read error
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+
 export function TieForm({ 
   onSubmit, 
   initialData, 
@@ -39,8 +131,9 @@ export function TieForm({
   onAddCategory, 
   onDeleteCategory 
 }: TieFormProps) {
-  const [previewUrl, setPreviewUrl] = useState<string | null>(initialData?.imageUrl || `https://placehold.co/300x400.png`);
-  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(initialData?.imageUrl || PLACEHOLDER_IMAGE_URL);
+  // imageFile state is mainly for internal TieForm use now, form.setValue('imageFile',...) will be the source for submission
+  const [, setImageFileLocal] = useState<File | null>(null); 
   const [isManageCategoryDialogOpen, setIsManageCategoryDialogOpen] = useState(false);
   const [newCategoryInput, setNewCategoryInput] = useState("");
   const { toast } = useToast();
@@ -53,13 +146,13 @@ export function TieForm({
   const [isWebcamDialogOpen, setIsWebcamDialogOpen] = useState(false);
   const [hasCameraPermission, setHasCameraPermission] = useState<boolean | null>(null);
   const [webcamStream, setWebcamStream] = useState<MediaStream | null>(null);
-  const [capturedImageDataUrl, setCapturedImageDataUrl] = useState<string | null>(null);
+  const [capturedImageDataUrl, setCapturedImageDataUrl] = useState<string | null>(null); // For holding temp DataURI from webcam
 
   const [videoDevices, setVideoDevices] = useState<MediaDeviceInfo[]>([]);
   const [currentVideoDeviceIndex, setCurrentVideoDeviceIndex] = useState<number>(0);
   const [isSwitchingCamera, setIsSwitchingCamera] = useState<boolean>(false);
 
-  const defaultPlaceholderImage = `https://placehold.co/300x400.png`;
+  const defaultPlaceholderImage = PLACEHOLDER_IMAGE_URL;
 
   const selectDropdownCategories = formCategories; 
   const categoriesForManagementDialog = allCategoriesForManagement;
@@ -72,79 +165,81 @@ export function TieForm({
       unitPrice: initialData?.unitPrice || 0,
       valueInQuantity: initialData?.valueInQuantity || 0,
       category: initialData?.category || (selectDropdownCategories.length > 0 ? selectDropdownCategories[0] : UNCATEGORIZED_LABEL), 
-      imageUrl: initialData?.imageUrl || defaultPlaceholderImage,
-      imageFile: null,
+      imageUrl: initialData?.imageUrl || defaultPlaceholderImage, // This might be a storage URL
+      imageFile: null, // This will hold the File object (original or compressed)
     },
   });
 
-  useEffect(() => {
+ useEffect(() => {
     const defaultCat = formCategories.length > 0 ? formCategories[0] : UNCATEGORIZED_LABEL;
-    const initialImageUrl = initialData?.imageUrl || defaultPlaceholderImage;
-    if (initialData) {
-        form.reset({
-            ...initialData,
-            valueInQuantity: initialData.valueInQuantity || 0,
-            category: formCategories.includes(initialData.category) 
-                        ? initialData.category 
-                        : (initialData.category === UNCATEGORIZED_LABEL ? UNCATEGORIZED_LABEL : defaultCat),
-            imageUrl: initialImageUrl,
-            imageFile: null, 
-        });
-        setPreviewUrl(initialImageUrl);
-    } else {
-        form.reset({
-            name: '',
-            quantity: 0,
-            unitPrice: 0,
-            valueInQuantity: 0,
-            category: defaultCat,
-            imageUrl: defaultPlaceholderImage,
-            imageFile: null,
-        });
-        setPreviewUrl(defaultPlaceholderImage); // Show placeholder initially for new ties
-    }
+    const initialDisplayImageUrl = initialData?.imageUrl || defaultPlaceholderImage;
+    
+    form.reset({
+        name: initialData?.name || '',
+        quantity: initialData?.quantity || 0,
+        unitPrice: initialData?.unitPrice || 0,
+        valueInQuantity: initialData?.valueInQuantity || 0,
+        category: initialData?.category 
+                    ? (formCategories.includes(initialData.category) || initialData.category === UNCATEGORIZED_LABEL ? initialData.category : defaultCat)
+                    : defaultCat,
+        imageUrl: initialDisplayImageUrl, // For display if no new file
+        imageFile: null, // Always start with no file selected in form
+    });
+    setPreviewUrl(initialDisplayImageUrl);
+    setImageFileLocal(null);
+    setCapturedImageDataUrl(null);
+
   }, [initialData, form, formCategories, defaultPlaceholderImage]);
 
 
-  const handleImageChange = (event: ChangeEvent<HTMLInputElement>) => {
+  const handleImageChange = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (file) {
-      setImageFile(file);
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setPreviewUrl(reader.result as string);
-      };
-      reader.readAsDataURL(file);
-      setCapturedImageDataUrl(null); 
+      if (!file.type.startsWith('image/')) {
+        toast({ title: "Formato Inválido", description: "Por favor, selecione um arquivo de imagem.", variant: "destructive" });
+        form.setValue('imageFile', null);
+        setPreviewUrl(initialData?.imageUrl || defaultPlaceholderImage);
+        return;
+      }
+      try {
+        const processedFile = await compressImageIfNeeded(file);
+        setImageFileLocal(processedFile);
+        form.setValue('imageFile', processedFile); // Set the processed file in the form
+        
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          setPreviewUrl(reader.result as string);
+        };
+        reader.readAsDataURL(processedFile);
+        setCapturedImageDataUrl(null); // Clear webcam temp image
+        form.setValue('imageUrl', ''); // Clear if we are using imageFile
+      } catch (error) {
+        console.error("Error processing image:", error);
+        toast({ title: "Erro ao Processar Imagem", description: "Não foi possível processar a imagem. Tente outra.", variant: "destructive" });
+        setImageFileLocal(file); // Fallback to original
+        form.setValue('imageFile', file);
+        const reader = new FileReader();
+        reader.onloadend = () => setPreviewUrl(reader.result as string);
+        reader.readAsDataURL(file);
+        setCapturedImageDataUrl(null);
+        form.setValue('imageUrl', '');
+      }
     } else {
-      setImageFile(null);
+      setImageFileLocal(null);
+      form.setValue('imageFile', null);
       if (!capturedImageDataUrl) { // Only reset if no webcam pic is active
         setPreviewUrl(initialData?.imageUrl || defaultPlaceholderImage);
+        form.setValue('imageUrl', initialData?.imageUrl || defaultPlaceholderImage);
       }
     }
   };
 
   const handleSubmit = (values: TieFormData) => {
-    // If an imageFile is present, it means a new file was selected.
-    // If capturedImageDataUrl is present, it means a photo was taken.
-    // Otherwise, use existing values.imageUrl or default placeholder.
-    let finalImageUrl = values.imageUrl || defaultPlaceholderImage; // Start with current or placeholder
-    if (imageFile) { // New file selected, this takes precedence
-        // The actual Data URI generation for imageFile will be handled by processImageAndGetUrl in parent
-        // Here we just pass the file.
-    } else if (capturedImageDataUrl) { // Webcam photo taken
-        finalImageUrl = capturedImageDataUrl;
-    }
-
-
-    const dataToSubmit: TieFormData = {
-      ...values,
-      valueInQuantity: values.valueInQuantity || 0,
-      category: values.category || UNCATEGORIZED_LABEL,
-      imageFile: imageFile, // Pass the file if selected
-      imageUrl: finalImageUrl // This will be Data URI if webcam used, or original URL, or placeholder
-    };
-    onSubmit(dataToSubmit);
+    // The 'values' object from react-hook-form will now contain
+    // 'imageFile' (which is the original or compressed File object)
+    // and 'imageUrl' (which might be an existing storage URL or empty if a new file is chosen).
+    // The parent component (page.tsx) will decide how to use these.
+    onSubmit(values);
 
     // Reset form
     const defaultCat = formCategories.length > 0 ? formCategories[0] : UNCATEGORIZED_LABEL;
@@ -158,7 +253,7 @@ export function TieForm({
         imageFile: null,
     });
     setPreviewUrl(defaultPlaceholderImage);
-    setImageFile(null);
+    setImageFileLocal(null);
     setCapturedImageDataUrl(null);
   };
   
@@ -203,7 +298,7 @@ export function TieForm({
   };
 
   const handleOpenWebcamDialog = async () => {
-    setCapturedImageDataUrl(null);
+    setCapturedImageDataUrl(null); // Clear previous webcam capture
     setHasCameraPermission(null);
     setIsSwitchingCamera(true);
     setVideoDevices([]); 
@@ -252,7 +347,7 @@ export function TieForm({
 
   useEffect(() => {
     const manageWebcamStream = async () => {
-      if (!isWebcamDialogOpen || capturedImageDataUrl) {
+      if (!isWebcamDialogOpen || capturedImageDataUrl) { // If dialog closed or image already captured
         if (webcamStream) {
           stopWebcam();
         }
@@ -304,8 +399,8 @@ export function TieForm({
         const stream = await navigator.mediaDevices.getUserMedia({
           video: { 
             deviceId: { exact: deviceIdToUse },
-            width: { ideal: 4096 }, 
-            height: { ideal: 2160 } 
+            width: { ideal: 1920 }, // Request higher res
+            height: { ideal: 1080 } 
           }
         });
         setHasCameraPermission(true);
@@ -340,7 +435,7 @@ export function TieForm({
         stopWebcam();
       }
     };
-  }, [isWebcamDialogOpen, capturedImageDataUrl, currentVideoDeviceIndex]); // Removed videoDevices from deps to avoid re-triggering when it's set inside
+  }, [isWebcamDialogOpen, capturedImageDataUrl, currentVideoDeviceIndex]);
 
 
   const handleSwitchCamera = () => {
@@ -355,13 +450,14 @@ export function TieForm({
     if (videoRef.current && canvasRef.current && webcamStream) {
       const video = videoRef.current;
       const canvas = canvasRef.current;
+      // Set canvas dimensions to video's intrinsic dimensions for best quality capture
       canvas.width = video.videoWidth;
       canvas.height = video.videoHeight;
       const context = canvas.getContext('2d');
       if (context) {
         context.drawImage(video, 0, 0, canvas.width, canvas.height);
-        const dataUrl = canvas.toDataURL('image/webp');
-        setCapturedImageDataUrl(dataUrl);
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.9); // Capture as JPEG with high quality
+        setCapturedImageDataUrl(dataUrl); // Store temp DataURI
       }
     } else {
       toast({ variant: "destructive", title: "Erro ao capturar", description: "Não foi possível acessar a stream de vídeo."});
@@ -372,15 +468,44 @@ export function TieForm({
     setCapturedImageDataUrl(null); 
   };
 
-  const handleUseCapturedImage = () => {
+  const handleUseCapturedImage = async () => {
     if (capturedImageDataUrl) {
-      setPreviewUrl(capturedImageDataUrl);
-      setImageFile(null); // Clear any selected file if webcam image is used
-      form.setValue('imageUrl', capturedImageDataUrl); // Set form value directly for submission
-      form.setValue('imageFile', null);
-      setIsWebcamDialogOpen(false); 
-      // Stop webcam after using the image
-      stopWebcam();
+      try {
+        const blob = await dataURItoBlobInForm(capturedImageDataUrl);
+        // Create a filename that suggests it's a webcam capture and will be JPEG
+        const filename = `webcam_capture_${Date.now()}.jpg`;
+        const tempFile = new File([blob], filename, { type: 'image/jpeg' });
+        
+        const processedFile = await compressImageIfNeeded(tempFile);
+        setImageFileLocal(processedFile);
+        form.setValue('imageFile', processedFile);
+        
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          setPreviewUrl(reader.result as string);
+        };
+        reader.readAsDataURL(processedFile);
+
+        setCapturedImageDataUrl(null); // Clear temp DataURI
+        form.setValue('imageUrl', ''); // Clear if using imageFile
+        
+        setIsWebcamDialogOpen(false);
+        stopWebcam();
+
+      } catch (error) {
+        console.error("Error processing webcam image:", error);
+        toast({ title: "Erro ao Processar Foto", description: "Não foi possível processar a foto da webcam. Tente novamente.", variant: "destructive" });
+        // As a fallback, we might just use the capturedImageDataUrl directly without compression for the preview
+        // and let the parent component decide. Or create a File from the original captured DataURI.
+        const blob = await dataURItoBlobInForm(capturedImageDataUrl);
+        const tempFile = new File([blob], `webcam_capture_${Date.now()}.jpg`, { type: 'image/jpeg' });
+        setImageFileLocal(tempFile);
+        form.setValue('imageFile', tempFile);
+        setPreviewUrl(capturedImageDataUrl);
+        
+        setIsWebcamDialogOpen(false);
+        stopWebcam();
+      }
     }
   };
   
@@ -509,9 +634,13 @@ export function TieForm({
               <FormItem>
                 <FormLabel>Imagem</FormLabel>
                 <div className="flex items-center gap-2">
-                    <FormControl className="flex-grow">
-                        <Input type="file" accept="image/*" onChange={handleImageChange} className="dark:file:text-primary-foreground"/>
-                    </FormControl>
+                    <Input 
+                        type="file" 
+                        accept="image/*" 
+                        onChange={handleImageChange} 
+                        className="dark:file:text-primary-foreground"
+                        id="imageFile" // Ensure ID for label association if using a separate label element
+                    />
                     <Button type="button" variant="outline" size="icon" onClick={handleOpenWebcamDialog} aria-label="Tirar Foto">
                         <Camera size={16} />
                     </Button>
@@ -527,7 +656,11 @@ export function TieForm({
                         <p className="mt-2 text-sm">Carregar uma imagem</p>
                     </div>
                 )}
-                <FormMessage />
+                <FormField
+                    control={form.control}
+                    name="imageFile"
+                    render={() => <FormMessage />} // For displaying errors related to imageFile if any
+                />
               </FormItem>
             </div>
             </ScrollArea>
@@ -569,12 +702,12 @@ export function TieForm({
           )}
           
           <div className={`bg-muted rounded-md overflow-hidden border ${hasCameraPermission && !capturedImageDataUrl ? 'block' : 'hidden'}`}>
-            <video ref={videoRef} autoPlay playsInline muted className="w-full aspect-[3/4] object-cover" />
+            <video ref={videoRef} autoPlay playsInline muted className="w-full aspect-video object-contain bg-black" />
           </div>
 
           {capturedImageDataUrl && (
             <div className="bg-muted rounded-md overflow-hidden border">
-              <Image src={capturedImageDataUrl} alt="Foto Capturada" width={480} height={640} className="w-full aspect-[3/4] object-cover" data-ai-hint="gravata moda"/>
+              <Image src={capturedImageDataUrl} alt="Foto Capturada" width={480} height={360} className="w-full aspect-video object-contain bg-black" data-ai-hint="gravata moda"/>
             </div>
           )}
         </div>
@@ -587,7 +720,7 @@ export function TieForm({
                 )}
             </div>
             <div className="flex gap-2 flex-col sm:flex-row">
-                <AlertDialogCancel onClick={() => { setIsWebcamDialogOpen(false); stopWebcam(); }} className="w-full sm:w-auto">Fechar</AlertDialogCancel>
+                <AlertDialogCancel onClick={() => { setIsWebcamDialogOpen(false); stopWebcam(); setCapturedImageDataUrl(null); }} className="w-full sm:w-auto">Fechar</AlertDialogCancel>
                 {hasCameraPermission && !capturedImageDataUrl && (
                     <Button onClick={handleCaptureImage} disabled={isSwitchingCamera} className="w-full sm:w-auto">
                     <Camera size={16} className="mr-2" /> Capturar Imagem
@@ -676,3 +809,6 @@ export function TieForm({
     </>
   );
 }
+
+
+    
