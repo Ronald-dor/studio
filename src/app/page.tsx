@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { AddTieDialog } from '@/components/AddTieDialog';
 import type { Tie, TieFormData, TieCategory } from '@/lib/types';
-import { PlusCircle, Shirt, LogOut, Search, PanelLeft } from 'lucide-react'; // Added PanelLeft
+import { PlusCircle, Shirt, LogOut, Search } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { UNCATEGORIZED_LABEL, PLACEHOLDER_IMAGE_URL } from '@/lib/types';
 import { TieCard } from '@/components/TieCard';
@@ -33,7 +33,7 @@ import {
   addCategoryToFirestore, 
   deleteCategoryFromFirestore 
 } from '@/services/categoryService';
-import { uploadImageAndGetURL, deleteImageFromStorage } from '@/services/imageService'; // Import image service
+import { uploadImageAndGetURL, deleteImageFromStorage } from '@/services/imageService';
 import { getAuth, onAuthStateChanged, signOut, User as FirebaseUser } from 'firebase/auth';
 import { app } from '@/lib/firebase';
 import {
@@ -46,12 +46,11 @@ import {
   SidebarMenuItem,
   SidebarMenuButton,
   SidebarInset,
-  useSidebar, // Import useSidebar
+  useSidebar,
 } from '@/components/ui/sidebar';
 
 const defaultCategoriesForSeed: TieCategory[] = ['Lisa', 'Listrada', 'Pontilhada'];
 
-// Helper function to convert Data URI to Blob
 async function dataURItoBlob(dataURI: string): Promise<Blob> {
   const response = await fetch(dataURI);
   const blob = await response.blob();
@@ -194,7 +193,6 @@ function MainContentLayout({
   );
 }
 
-
 export default function HomePage() {
   const router = useRouter();
   const [currentUser, setCurrentUser] = useState<FirebaseUser | null>(null);
@@ -220,6 +218,7 @@ export default function HomePage() {
   useEffect(() => {
     setIsClientLoaded(true);
     const unsubscribe = onAuthStateChanged(auth, (user) => {
+      console.log("onAuthStateChanged: user status changed", user);
       if (user) {
         setCurrentUser(user);
       } else {
@@ -238,7 +237,9 @@ export default function HomePage() {
   }, [isClientLoaded]);
 
   useEffect(() => {
+    console.log("Data fetching useEffect triggered. Dependencies changed:", { isClientLoaded, authChecked, currentUser });
     if (!isClientLoaded || !authChecked || !currentUser) {
+      console.log("Data fetching useEffect: conditions not met to fetch. currentUser:", currentUser, "authChecked:", authChecked, "isClientLoaded:", isClientLoaded);
       if (!currentUser && authChecked && isClientLoaded) { 
         setTies([]);
         setCategories([]);
@@ -248,14 +249,33 @@ export default function HomePage() {
     }
     
     const fetchData = async () => {
-      if (!currentUser?.uid) return;
+      console.log("fetchData initiated. currentUser:", currentUser, "authChecked:", authChecked, "isClientLoaded:", isClientLoaded);
+      if (!currentUser?.uid) {
+        console.warn("fetchData: currentUser.uid is not available. Aborting fetch. currentUser:", currentUser);
+        setIsLoadingData(false);
+        if (authChecked && !currentUser) {
+            setTies([]);
+            setCategories([]);
+        }
+        return;
+      }
       setIsLoadingData(true);
+      const userUid = currentUser.uid;
+      console.log(`fetchData: Attempting to fetch data for user UID: ${userUid}`);
+
       try {
-        const userUid = currentUser.uid;
+        console.log(`fetchData: Calling getTiesFromFirestore for UID: ${userUid}`);
+        const loadedTiesPromise = getTiesFromFirestore(userUid);
+        
+        console.log(`fetchData: Calling getCategoriesFromFirestore for UID: ${userUid}`);
+        const loadedCategoriesPromise = getCategoriesFromFirestore(userUid, defaultCategoriesForSeed);
+
         const [loadedTies, loadedCategories] = await Promise.all([
-          getTiesFromFirestore(userUid),
-          getCategoriesFromFirestore(userUid, defaultCategoriesForSeed)
+          loadedTiesPromise,
+          loadedCategoriesPromise
         ]);
+        
+        console.log("fetchData: Successfully fetched ties and categories.", { loadedTies, loadedCategories });
         
         setTies(loadedTies);
 
@@ -272,12 +292,12 @@ export default function HomePage() {
         }
         setCategories(Array.from(new Set(finalCategories)).sort());
 
-      } catch (error) {
+      } catch (error: any) {
          console.error("Erro ao buscar dados do Firestore:", error);
          toast({
            variant: "destructive",
            title: "Erro ao Carregar Dados",
-           description: "Não foi possível carregar os dados do servidor.",
+           description: `Não foi possível carregar os dados. Verifique as permissões do Firestore. Detalhe: ${error.message}`,
          });
       } finally {
         setIsLoadingData(false);
@@ -385,77 +405,94 @@ export default function HomePage() {
 
     let uploadedImageUrl = data.imageUrl || PLACEHOLDER_IMAGE_URL;
     let tempTieIdForImageUpload = editingTie?.id;
+    const userUid = currentUser.uid;
 
     try {
-      // Se for uma nova gravata e há uma imagem para upload, crie o documento primeiro
-      // para ter um ID para o caminho da imagem.
-      if (!editingTie?.id && (data.imageFile || (data.imageUrl && data.imageUrl.startsWith('data:')))) {
-        const tempTieDataForId = {
-          name: data.name!,
-          quantity: data.quantity!,
-          unitPrice: data.unitPrice!,
-          valueInQuantity: data.valueInQuantity || 0,
-          category: (data.category && data.category.trim() !== "") ? data.category : UNCATEGORIZED_LABEL,
-          imageUrl: PLACEHOLDER_IMAGE_URL, // Placeholder temporário
-        };
-        const tempNewTie = await addTieToFirestore(currentUser.uid, tempTieDataForId);
-        tempTieIdForImageUpload = tempNewTie.id;
-      } else if (!editingTie?.id) { // Nova gravata, sem imagem nova, usa placeholder direto
-         tempTieIdForImageUpload = Date.now().toString(); // Provisório, será substituído pelo ID real
-      }
-      
-      if (!tempTieIdForImageUpload) { // Garante que temos um ID para o upload
-        console.error("Tie ID is undefined, cannot proceed with image upload or tie creation.");
-        toast({ title: "Erro Crítico", description: "Não foi possível obter um ID para a gravata.", variant: "destructive" });
-        return;
-      }
-      
-      const existingImageUrlForUpload = editingTie?.id ? editingTie.imageUrl : null;
-
-      if (data.imageFile) {
-        uploadedImageUrl = await uploadImageAndGetURL(currentUser.uid, data.imageFile, tempTieIdForImageUpload, existingImageUrlForUpload);
-      } else if (data.imageUrl && data.imageUrl.startsWith('data:')) { // Webcam image
-        const imageBlob = await dataURItoBlob(data.imageUrl);
-        uploadedImageUrl = await uploadImageAndGetURL(currentUser.uid, imageBlob, tempTieIdForImageUpload, existingImageUrlForUpload);
-      } else if (!editingTie?.id) { // Nova gravata e nenhuma imagem nova, mantém placeholder
-        uploadedImageUrl = PLACEHOLDER_IMAGE_URL;
-      }
-      // Se for edição e não houver nova imagem, uploadedImageUrl já é o data.imageUrl (URL existente ou placeholder)
-
       const tieCategory = data.category && data.category.trim() !== "" ? data.category : UNCATEGORIZED_LABEL;
-      const tieDataForSave = {
-        name: data.name!,
-        quantity: data.quantity!,
-        unitPrice: data.unitPrice!,
-        valueInQuantity: data.valueInQuantity || 0,
-        category: tieCategory,
-        imageUrl: uploadedImageUrl,
-      };
+      
+      let finalTieData: Omit<Tie, 'id'>;
 
-      if (editingTie?.id) {
-        await updateTieInFirestore(currentUser.uid, editingTie.id, tieDataForSave);
-        setTies(prevTies => prevTies.map(t => t.id === editingTie.id ? { ...tieDataForSave, id: editingTie.id! } : t));
+      if (editingTie?.id) { // Editing existing tie
+        tempTieIdForImageUpload = editingTie.id;
+        if (data.imageFile) {
+          uploadedImageUrl = await uploadImageAndGetURL(userUid, data.imageFile, tempTieIdForImageUpload, editingTie.imageUrl);
+        } else if (data.imageUrl && data.imageUrl.startsWith('data:')) { // Webcam image
+          const imageBlob = await dataURItoBlob(data.imageUrl);
+          uploadedImageUrl = await uploadImageAndGetURL(userUid, imageBlob, tempTieIdForImageUpload, editingTie.imageUrl);
+        }
+        // If no new image, uploadedImageUrl remains data.imageUrl (which is initialData.imageUrl or placeholder if it was never set)
+
+        finalTieData = {
+            name: data.name!,
+            quantity: data.quantity!,
+            unitPrice: data.unitPrice!,
+            valueInQuantity: data.valueInQuantity || 0,
+            category: tieCategory,
+            imageUrl: uploadedImageUrl,
+        };
+        await updateTieInFirestore(userUid, tempTieIdForImageUpload, finalTieData);
+        setTies(prevTies => prevTies.map(t => t.id === tempTieIdForImageUpload ? { ...finalTieData, id: tempTieIdForImageUpload! } : t));
         toast({ title: "Gravata Atualizada", description: `${data.name} foi atualizada.` });
-      } else if (tempTieIdForImageUpload && tempTieIdForImageUpload !== Date.now().toString()) { 
-        // Nova gravata, e imagem foi carregada (usando o ID do doc já criado)
-        await updateTieInFirestore(currentUser.uid, tempTieIdForImageUpload, tieDataForSave);
-        setTies(prevTies => [{ ...tieDataForSave, id: tempTieIdForImageUpload! }, ...prevTies.filter(t => t.id !== tempTieIdForImageUpload)]);
-        toast({ title: "Gravata Adicionada", description: `${data.name} foi adicionada.` });
-      } else {
-        // Nova gravata, sem upload de imagem novo (usou placeholder, ou erro antes do upload)
-        const newTie = await addTieToFirestore(currentUser.uid, tieDataForSave);
-        setTies(prevTies => [newTie, ...prevTies]);
+
+      } else { // Adding new tie
+        const tempNewTieData: Omit<Tie, 'id'> = {
+            name: data.name!,
+            quantity: data.quantity!,
+            unitPrice: data.unitPrice!,
+            valueInQuantity: data.valueInQuantity || 0,
+            category: tieCategory,
+            imageUrl: PLACEHOLDER_IMAGE_URL, // Start with placeholder
+        };
+        const newTieRef = await addTieToFirestore(userUid, tempNewTieData); // Create doc to get ID
+        tempTieIdForImageUpload = newTieRef.id;
+
+        if (data.imageFile) {
+          uploadedImageUrl = await uploadImageAndGetURL(userUid, data.imageFile, tempTieIdForImageUpload);
+        } else if (data.imageUrl && data.imageUrl.startsWith('data:')) { // Webcam image
+          const imageBlob = await dataURItoBlob(data.imageUrl);
+          uploadedImageUrl = await uploadImageAndGetURL(userUid, imageBlob, tempTieIdForImageUpload);
+        }
+        // else: no new image, imageUrl remains placeholder if nothing was uploaded
+
+        finalTieData = { ...tempNewTieData, imageUrl: uploadedImageUrl };
+        
+        // Update the tie with the actual image URL if it changed from placeholder
+        if (uploadedImageUrl !== PLACEHOLDER_IMAGE_URL) {
+            await updateTieInFirestore(userUid, tempTieIdForImageUpload, finalTieData);
+        }
+        setTies(prevTies => [{ ...finalTieData, id: tempTieIdForImageUpload! }, ...prevTies]);
         toast({ title: "Gravata Adicionada", description: `${data.name} foi adicionada.` });
       }
 
       if (!categories.includes(tieCategory)) { 
-        await addCategoryToFirestore(currentUser.uid, tieCategory); 
+        await addCategoryToFirestore(userUid, tieCategory); 
         setCategories(prevCategories => Array.from(new Set([...prevCategories, tieCategory])).sort());
       }
 
     } catch (error: any) {
-      console.error("Erro ao salvar gravata:", error);
-      toast({ title: "Erro ao Salvar", description: `Não foi possível salvar a gravata: ${error.message || 'Erro desconhecido.'}`, variant: "destructive" });
+      console.error("Erro ao salvar gravata no Firestore:", error);
+      let description = "Não foi possível salvar a gravata.";
+      if (error.message && error.message.includes("longer than 1048487 bytes")) {
+        description = "A imagem é muito grande. Tente uma imagem menor. A gravata foi salva com uma imagem placeholder.";
+         // Attempt to save with placeholder if image was the issue (only for new ties not yet fully saved)
+         if (!editingTie?.id && tempTieIdForImageUpload) {
+            try {
+                 const tieDataWithoutImage = {
+                    name: data.name!, quantity: data.quantity!, unitPrice: data.unitPrice!,
+                    valueInQuantity: data.valueInQuantity || 0,
+                    category: data.category && data.category.trim() !== "" ? data.category : UNCATEGORIZED_LABEL,
+                    imageUrl: PLACEHOLDER_IMAGE_URL,
+                };
+                await updateTieInFirestore(userUid, tempTieIdForImageUpload, tieDataWithoutImage);
+                 setTies(prevTies => prevTies.map(t => t.id === tempTieIdForImageUpload ? { ...tieDataWithoutImage, id: tempTieIdForImageUpload! } : t));
+            } catch (fallbackError) {
+                console.error("Error saving tie with placeholder after image failure:", fallbackError);
+            }
+        }
+      } else if (error.message) {
+        description = error.message;
+      }
+      toast({ title: "Erro ao Salvar", description, variant: "destructive" });
     }
 
     setEditingTie(undefined);
@@ -464,7 +501,7 @@ export default function HomePage() {
 
 
   const handleEditTie = (tie: Tie) => {
-    setEditingTie({ ...tie, imageFile: null }); // imageFile é sempre null ao abrir para edição
+    setEditingTie({ ...tie, imageFile: null });
     setIsDialogOpen(true);
   };
 
@@ -473,7 +510,6 @@ export default function HomePage() {
     const tieToDelete = ties.find(t => t.id === id);
     
     try {
-      // Deleta a imagem do Storage ANTES de deletar o documento do Firestore
       if (imageUrl && imageUrl !== PLACEHOLDER_IMAGE_URL) {
         await deleteImageFromStorage(imageUrl);
       }
@@ -494,7 +530,6 @@ export default function HomePage() {
   const handleLogout = async () => {
     try {
       await signOut(auth);
-      // onAuthStateChanged will handle redirect
     } catch (error) {
       console.error("Erro ao fazer logout:", error);
       toast({ title: "Erro", description: "Não foi possível fazer logout.", variant: "destructive"});
@@ -559,3 +594,4 @@ export default function HomePage() {
     </SidebarProvider>
   );
 }
+
