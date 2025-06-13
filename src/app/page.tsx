@@ -63,6 +63,12 @@ const loggableFirestoreData = (data: any) => {
     if (key === 'imageUrl' && typeof value === 'string' && value.startsWith('data:')) {
       return value.substring(0, 100) + '... [Data URI Truncated]';
     }
+    if (key === 'imageFile' && value && typeof value === 'object' && value.name) {
+        return `[File: ${value.name}, Size: ${value.size}]`;
+    }
+    if (key === 'imageFile' && value && typeof value === 'object' && Object.keys(value).length === 0) {
+        return '[Empty File Object]';
+    }
     return value;
   }, 2);
 };
@@ -230,7 +236,7 @@ export default function HomePage() {
     setIsClientLoaded(true);
     console.log("HomePage: useEffect for onAuthStateChanged mounting.");
     const unsubscribe = onAuthStateChanged(auth, (user) => {
-      console.log("HomePage: onAuthStateChanged triggered. User:", user);
+      console.log("HomePage: onAuthStateChanged triggered. User:", user ? user.uid : 'null');
       if (user) {
         setCurrentUser(user);
       } else {
@@ -298,7 +304,7 @@ export default function HomePage() {
          toast({
            variant: "destructive",
            title: "Erro ao Carregar Dados",
-           description: `Não foi possível carregar os dados do servidor. Detalhe: ${error.message}`,
+           description: `Não foi possível carregar os dados. Detalhe: ${error.message}`,
          });
       } finally {
         setIsLoadingData(false);
@@ -406,82 +412,88 @@ export default function HomePage() {
 
     const userUid = currentUser.uid;
     const tieCategory = data.category && data.category.trim() !== "" ? data.category : UNCATEGORIZED_LABEL;
-    let tempTieIdForImageUpload = editingTie?.id; // Used for new and existing ties for image path
-
+    
     console.log("handleFormSubmit: Received data from form:", loggableFirestoreData(data));
     console.log("handleFormSubmit: Editing tie ID:", editingTie?.id);
+    
+    let tempTieIdForOperations = editingTie?.id; // Used for image path and Firestore operations
+    let finalFirestoreObject: Omit<Tie, 'id'>;
 
     try {
-      let finalTieObjectForFirestore: Omit<Tie, 'id'>;
-      let actualTieIdForStateUpdate: string;
-
       if (editingTie?.id) { // Editing existing tie
-        actualTieIdForStateUpdate = editingTie.id;
-        tempTieIdForImageUpload = editingTie.id;
-        let imageUrlForFirestore = editingTie.imageUrl || PLACEHOLDER_IMAGE_URL; // Start with existing or placeholder
+        tempTieIdForOperations = editingTie.id;
+        let imageUrlToPersist = editingTie.imageUrl || PLACEHOLDER_IMAGE_URL;
 
-        if (data.imageFile) {
+        // Check for new file upload
+        if (data.imageFile && data.imageFile.size > 0) {
           console.log("handleFormSubmit (Edit): New imageFile present. Uploading...");
-          imageUrlForFirestore = await uploadImageAndGetURL(userUid, data.imageFile, tempTieIdForImageUpload, editingTie.imageUrl);
-        } else if (data.imageUrl && data.imageUrl.startsWith('data:')) { // New webcam image
-          console.log("handleFormSubmit (Edit): New webcam image (Data URI) present. Uploading...");
+          const oldImageUrlForDeletion = (editingTie.imageUrl && !editingTie.imageUrl.startsWith('data:') && editingTie.imageUrl !== PLACEHOLDER_IMAGE_URL) ? editingTie.imageUrl : undefined;
+          imageUrlToPersist = await uploadImageAndGetURL(userUid, data.imageFile, tempTieIdForOperations, oldImageUrlForDeletion);
+        } 
+        // Check for new webcam image, only if it's different from the current one
+        else if (data.imageUrl && data.imageUrl.startsWith('data:') && data.imageUrl !== editingTie.imageUrl) {
+          console.log("handleFormSubmit (Edit): New different webcam image (Data URI) present. Uploading...");
           const imageBlob = await dataURItoBlob(data.imageUrl);
-          imageUrlForFirestore = await uploadImageAndGetURL(userUid, imageBlob, tempTieIdForImageUpload, editingTie.imageUrl);
+          const oldImageUrlForDeletion = (editingTie.imageUrl && !editingTie.imageUrl.startsWith('data:') && editingTie.imageUrl !== PLACEHOLDER_IMAGE_URL) ? editingTie.imageUrl : undefined;
+          imageUrlToPersist = await uploadImageAndGetURL(userUid, imageBlob, tempTieIdForOperations, oldImageUrlForDeletion);
         }
-        // If no new imageFile or webcam data.imageUrl, imageUrlForFirestore remains editingTie.imageUrl (or placeholder)
+        // If current imageUrl is a Data URI (bad data) and no new image was provided, force placeholder
+        else if (imageUrlToPersist.startsWith('data:')) {
+            console.warn("handleFormSubmit (Edit): Existing imageUrl was a Data URI and no new image provided. Forcing placeholder to prevent error.");
+            imageUrlToPersist = PLACEHOLDER_IMAGE_URL;
+            // Note: If editingTie.imageUrl was a Data URI, we don't have an old Firebase Storage URL to delete here.
+            // The uploadImageAndGetURL function would only delete if its `existingImageUrl` param was a valid storage URL.
+        }
+        // At this point, imageUrlToPersist should be a valid storage URL or the placeholder.
 
-        finalTieObjectForFirestore = {
+        finalFirestoreObject = {
             name: data.name!,
             quantity: data.quantity!,
             unitPrice: data.unitPrice!,
             valueInQuantity: data.valueInQuantity || 0,
             category: tieCategory,
-            imageUrl: imageUrlForFirestore, // This should be a Storage URL or placeholder
+            imageUrl: imageUrlToPersist,
         };
         
-        console.log(`handleFormSubmit (Edit): Attempting to update tie ID ${tempTieIdForImageUpload} for user ${userUid}. Data:`, loggableFirestoreData(finalTieObjectForFirestore));
-        await updateTieInFirestore(userUid, tempTieIdForImageUpload, finalTieObjectForFirestore);
-        setTies(prevTies => prevTies.map(t => t.id === tempTieIdForImageUpload ? { ...finalTieObjectForFirestore, id: tempTieIdForImageUpload! } : t));
+        console.log(`handleFormSubmit (Edit): Attempting to update tie ID ${tempTieIdForOperations} for user ${userUid}. Data:`, loggableFirestoreData(finalFirestoreObject));
+        await updateTieInFirestore(userUid, tempTieIdForOperations, finalFirestoreObject);
+        setTies(prevTies => prevTies.map(t => t.id === tempTieIdForOperations ? { ...finalFirestoreObject, id: tempTieIdForOperations! } : t));
         toast({ title: "Gravata Atualizada", description: `${data.name} foi atualizada.` });
 
       } else { // Adding new tie
-        // 1. Create the basic tie data (without final image URL yet)
         const initialTieDataForFirestore: Omit<Tie, 'id'> = {
             name: data.name!,
             quantity: data.quantity!,
             unitPrice: data.unitPrice!,
             valueInQuantity: data.valueInQuantity || 0,
             category: tieCategory,
-            imageUrl: PLACEHOLDER_IMAGE_URL, // Start with placeholder
+            imageUrl: PLACEHOLDER_IMAGE_URL, 
         };
         
         console.log(`handleFormSubmit (Add): Attempting to add new tie for user ${userUid}. Initial data:`, loggableFirestoreData(initialTieDataForFirestore));
         const newTieDoc = await addTieToFirestore(userUid, initialTieDataForFirestore);
-        actualTieIdForStateUpdate = newTieDoc.id;
-        tempTieIdForImageUpload = newTieDoc.id; // ID for image path
-        console.log(`handleFormSubmit (Add): New tie document created with ID: ${tempTieIdForImageUpload}`);
+        tempTieIdForOperations = newTieDoc.id; 
+        console.log(`handleFormSubmit (Add): New tie document created with ID: ${tempTieIdForOperations}`);
 
         let finalImageUrlForNewTie = PLACEHOLDER_IMAGE_URL;
 
-        // 2. Upload image if provided
-        if (data.imageFile) {
-          console.log(`handleFormSubmit (Add): New imageFile present for new tie ${tempTieIdForImageUpload}. Uploading...`);
-          finalImageUrlForNewTie = await uploadImageAndGetURL(userUid, data.imageFile, tempTieIdForImageUpload);
-        } else if (data.imageUrl && data.imageUrl.startsWith('data:')) { // Webcam image
-          console.log(`handleFormSubmit (Add): New webcam image (Data URI) for new tie ${tempTieIdForImageUpload}. Uploading...`);
+        if (data.imageFile && data.imageFile.size > 0) {
+          console.log(`handleFormSubmit (Add): New imageFile present for new tie ${tempTieIdForOperations}. Uploading...`);
+          finalImageUrlForNewTie = await uploadImageAndGetURL(userUid, data.imageFile, tempTieIdForOperations);
+        } else if (data.imageUrl && data.imageUrl.startsWith('data:')) { 
+          console.log(`handleFormSubmit (Add): New webcam image (Data URI) for new tie ${tempTieIdForOperations}. Uploading...`);
           const imageBlob = await dataURItoBlob(data.imageUrl);
-          finalImageUrlForNewTie = await uploadImageAndGetURL(userUid, imageBlob, tempTieIdForImageUpload);
-        }
-
-        // 3. Update Firestore if image was uploaded (and is not the placeholder)
-        finalTieObjectForFirestore = { ...initialTieDataForFirestore, imageUrl: finalImageUrlForNewTie };
-
-        if (finalImageUrlForNewTie !== PLACEHOLDER_IMAGE_URL) {
-          console.log(`handleFormSubmit (Add): Updating tie ${tempTieIdForImageUpload} with new image URL. Data:`, loggableFirestoreData(finalTieObjectForFirestore));
-          await updateTieInFirestore(userUid, tempTieIdForImageUpload, { imageUrl: finalImageUrlForNewTie }); // Only update imageUrl
+          finalImageUrlForNewTie = await uploadImageAndGetURL(userUid, imageBlob, tempTieIdForOperations);
         }
         
-        setTies(prevTies => [{ ...finalTieObjectForFirestore, id: actualTieIdForStateUpdate }, ...prevTies]);
+        finalFirestoreObject = { ...initialTieDataForFirestore, imageUrl: finalImageUrlForNewTie };
+
+        if (finalImageUrlForNewTie !== PLACEHOLDER_IMAGE_URL) {
+          console.log(`handleFormSubmit (Add): Updating tie ${tempTieIdForOperations} with new image URL. Data:`, loggableFirestoreData({ imageUrl: finalImageUrlForNewTie }));
+          await updateTieInFirestore(userUid, tempTieIdForOperations, { imageUrl: finalImageUrlForNewTie }); 
+        }
+        
+        setTies(prevTies => [{ ...finalFirestoreObject, id: tempTieIdForOperations! }, ...prevTies]);
         toast({ title: "Gravata Adicionada", description: `${data.name} foi adicionada.` });
       }
 
@@ -492,20 +504,18 @@ export default function HomePage() {
 
     } catch (error: any) {
       console.error("Erro ao salvar gravata no Firestore:", error);
-      console.error("Data submitted that caused error:", loggableFirestoreData(data));
+      console.error("Data submitted that caused error:", loggableFirestoreData(data)); // Logs the initial form data
       
       let description = "Não foi possível salvar a gravata.";
       if (error.message) {
         description = error.message;
       }
       
-      // Specific handling if client-side Firestore validation catches oversized imageUrl
-      if (error.message && error.message.includes("longer than 1048487 bytes")) {
-        description = "A imagem é muito grande. Tente uma imagem menor.";
-        // Attempt to save/update with placeholder if it was a new tie or if tempTieIdForImageUpload is set
-        if (tempTieIdForImageUpload && userUid) {
+      if (error.message && (error.message.includes("longer than 1048487 bytes") || error.message.includes("unexpected response"))) {
+        description = "A imagem é muito grande ou houve um erro no servidor. Tente uma imagem menor ou tente novamente.";
+        if (tempTieIdForOperations && userUid) {
             const fallbackData: Partial<Tie> = { imageUrl: PLACEHOLDER_IMAGE_URL };
-            if (!editingTie?.id) { // If it was a new tie, ensure essential fields are there
+            if (!editingTie?.id) { 
                 fallbackData.name = data.name!;
                 fallbackData.quantity = data.quantity!;
                 fallbackData.unitPrice = data.unitPrice!;
@@ -513,13 +523,16 @@ export default function HomePage() {
                 fallbackData.valueInQuantity = data.valueInQuantity || 0;
             }
             try {
-                console.warn(`handleFormSubmit (Catch): Attempting to save tie ${tempTieIdForImageUpload} with placeholder due to previous error.`);
-                await updateTieInFirestore(userUid, tempTieIdForImageUpload, fallbackData as Omit<Tie, 'id'>); // Cast needed
-                // Update local state to reflect placeholder
-                setTies(prevTies => prevTies.map(t => t.id === tempTieIdForImageUpload ? { ...t, ...fallbackData } : t));
+                console.warn(`handleFormSubmit (Catch): Attempting to save/update tie ${tempTieIdForOperations} with placeholder due to previous error.`);
+                // If it was a new tie, it's already created with placeholder, just ensure local state is updated
+                // If it was an edit, update with placeholder
+                if (editingTie?.id) {
+                    await updateTieInFirestore(userUid, tempTieIdForOperations, fallbackData as Omit<Tie, 'id'>);
+                }
+                setTies(prevTies => prevTies.map(t => t.id === tempTieIdForOperations ? { ...t, ...fallbackData, id: tempTieIdForOperations! } : t));
                 description += " A gravata foi salva com uma imagem placeholder.";
             } catch (fallbackError: any) {
-                console.error("Error saving tie with placeholder after image failure:", fallbackError);
+                console.error("Error saving/updating tie with placeholder after image failure:", fallbackError);
                 description += " Falha ao salvar com imagem placeholder.";
             }
         }
@@ -563,7 +576,6 @@ export default function HomePage() {
   const handleLogout = async () => {
     try {
       await signOut(auth);
-      // onAuthStateChanged will handle redirect and clearing currentUser
     } catch (error) {
       console.error("Erro ao fazer logout:", error);
       toast({ title: "Erro", description: "Não foi possível fazer logout.", variant: "destructive"});
@@ -629,4 +641,6 @@ export default function HomePage() {
   );
 }
     
+    
+
     
