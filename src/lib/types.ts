@@ -3,7 +3,7 @@ import { z } from 'zod';
 
 export type TieCategory = string;
 export const UNCATEGORIZED_LABEL = 'Sem Categoria';
-const PLACEHOLDER_IMAGE_URL = `https://placehold.co/300x400.png`;
+export const PLACEHOLDER_IMAGE_URL = `https://placehold.co/300x400.png`;
 
 export const TieSchema = z.object({
   id: z.string().optional(),

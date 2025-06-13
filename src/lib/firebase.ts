@@ -1,14 +1,15 @@
 
 import { initializeApp, getApps, FirebaseApp } from 'firebase/app';
 import { getFirestore, Firestore } from 'firebase/firestore';
-// Adicione outros serviços do Firebase que você precisar, como getAuth, getStorage
+import { getStorage, FirebaseStorage } from 'firebase/storage'; // Added Storage
+// Adicione outros serviços do Firebase que você precisar, como getAuth
 
 // IMPORTANTE: Substitua estas configurações pelas configurações REAIS do seu projeto Firebase!
 const firebaseConfig = {
   apiKey: "AIzaSyAtOw05Qm7WcJrsHJUcJNUNmdoDfhzJYqQ",
   authDomain: "tietrack-71510.firebaseapp.com",
   projectId: "tietrack",
-  storageBucket: "tietrack.firebasestorage.app",
+  storageBucket: "tietrack.firebasestorage.app", // Garanta que este é o bucket correto
   messagingSenderId: "230701156418",
   appId: "1:230701156418:web:82720ca156abbe233a05db"
 };
@@ -16,6 +17,7 @@ const firebaseConfig = {
 
 let app: FirebaseApp;
 let db: Firestore;
+let storage: FirebaseStorage; // Added Storage
 
 if (!getApps().length) {
   app = initializeApp(firebaseConfig);
@@ -24,5 +26,6 @@ if (!getApps().length) {
 }
 
 db = getFirestore(app);
+storage = getStorage(app); // Initialize Storage
 
-export { app, db };
+export { app, db, storage }; // Export Storage

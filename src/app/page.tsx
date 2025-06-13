@@ -7,9 +7,9 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { AddTieDialog } from '@/components/AddTieDialog';
 import type { Tie, TieFormData, TieCategory } from '@/lib/types';
-import { PlusCircle, Shirt, LogOut, Search } from 'lucide-react';
+import { PlusCircle, Shirt, LogOut, Search, PanelLeft } from 'lucide-react'; // Added PanelLeft
 import { useToast } from '@/hooks/use-toast';
-import { UNCATEGORIZED_LABEL } from '@/lib/types';
+import { UNCATEGORIZED_LABEL, PLACEHOLDER_IMAGE_URL } from '@/lib/types';
 import { TieCard } from '@/components/TieCard';
 import {
   AlertDialog,
@@ -33,6 +33,7 @@ import {
   addCategoryToFirestore, 
   deleteCategoryFromFirestore 
 } from '@/services/categoryService';
+import { uploadImageAndGetURL, deleteImageFromStorage } from '@/services/imageService'; // Import image service
 import { getAuth, onAuthStateChanged, signOut, User as FirebaseUser } from 'firebase/auth';
 import { app } from '@/lib/firebase';
 import {
@@ -45,10 +46,17 @@ import {
   SidebarMenuItem,
   SidebarMenuButton,
   SidebarInset,
-  useSidebar,
+  useSidebar, // Import useSidebar
 } from '@/components/ui/sidebar';
 
 const defaultCategoriesForSeed: TieCategory[] = ['Lisa', 'Listrada', 'Pontilhada'];
+
+// Helper function to convert Data URI to Blob
+async function dataURItoBlob(dataURI: string): Promise<Blob> {
+  const response = await fetch(dataURI);
+  const blob = await response.blob();
+  return blob;
+}
 
 function MainContentLayout({
   currentUser,
@@ -77,7 +85,7 @@ function MainContentLayout({
   handleLogout: () => void;
   openAddDialog: () => void;
   handleEditTie: (tie: Tie) => void;
-  handleDeleteTie: (id: string) => void;
+  handleDeleteTie: (id: string, imageUrl?: string) => void;
 }) {
   const { toggleSidebar } = useSidebar();
 
@@ -133,7 +141,7 @@ function MainContentLayout({
           <div className="container mx-auto flex flex-col md:flex-row justify-between items-center gap-4 md:gap-2">
             <div className="flex items-center space-x-2">
               <Button variant="ghost" onClick={toggleSidebar} className="flex items-center px-2 py-1 h-auto text-base font-semibold">
-                <Shirt size={20} className="mr-2" />
+                <Shirt size={20} className="mr-2" /> 
                 <span>TieTrack</span>
               </Button>
             </div>
@@ -165,7 +173,7 @@ function MainContentLayout({
                {filteredTies.length > 0 ? (
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                   {filteredTies.map((tie) => (
-                    <TieCard key={tie.id} tie={tie} onEdit={handleEditTie} onDelete={handleDeleteTie} />
+                    <TieCard key={tie.id} tie={tie} onEdit={handleEditTie} onDelete={() => handleDeleteTie(tie.id, tie.imageUrl)} />
                   ))}
                 </div>
               ) : (
@@ -295,27 +303,6 @@ export default function HomePage() {
 
   }, [ties, categories, isLoadingData, isClientLoaded, authChecked, currentUser, categoryToDelete]);
 
-  // This function is a placeholder. For real image uploads, use Firebase Storage.
-  const processImageAndGetUrl = async (imageFile: File | null | undefined, currentImageUrl?: string): Promise<string> => {
-    if (imageFile) {
-      // Simulating an upload process and returning a data URI.
-      // WARNING: This will likely exceed Firestore document size limits for large images.
-      // A real implementation should upload to Firebase Storage and return the storage URL.
-      return new Promise((resolve) => {
-        const reader = new FileReader();
-        reader.onloadend = () => {
-          resolve(reader.result as string);
-        };
-        reader.onerror = () => {
-           resolve(currentImageUrl || `https://placehold.co/300x400.png`);
-        }
-        reader.readAsDataURL(imageFile);
-      });
-    }
-    // If no new image file, and no currentImageUrl, use placeholder.
-    // If there's a currentImageUrl (e.g. from editing an existing tie), keep it.
-    return currentImageUrl || `https://placehold.co/300x400.png`; 
-  };
 
   const handleAddCategory = useCallback(async (categoryName: string): Promise<boolean> => {
     if (!isClientLoaded || !authChecked || !currentUser?.uid) return false;
@@ -395,42 +382,70 @@ export default function HomePage() {
 
   const handleFormSubmit = useCallback(async (data: TieFormData) => {
     if (!isClientLoaded || !authChecked || !currentUser?.uid) return;
-    
-    // Crucial: For production, imageFile should be uploaded to Firebase Storage,
-    // and finalImageUrl should be the Storage URL.
-    // For now, processImageAndGetUrl still returns a Data URI which can be too large for Firestore.
-    // If data.imageFile is null/undefined AND data.imageUrl is already a placeholder OR a valid (short) URL, use that.
-    // Otherwise, if a new image file is provided, it will be processed.
-    let finalImageUrl = data.imageUrl || `https://placehold.co/300x400.png`;
-    if (data.imageFile) {
-        finalImageUrl = await processImageAndGetUrl(data.imageFile, data.imageUrl);
-    } else if (!data.imageUrl || data.imageUrl.startsWith('data:')) {
-        // If imageUrl is missing or is a (potentially long) data URI from a previous state without a new file, default to placeholder
-        // This is a safety net. Ideally, `initialData.imageUrl` when editing would already be a short storage URL.
-        finalImageUrl = `https://placehold.co/300x400.png`;
-    }
 
-
-    const tieCategory = data.category && data.category.trim() !== "" ? data.category : UNCATEGORIZED_LABEL;
-
-    const tieDataForSave = {
-      name: data.name!,
-      quantity: data.quantity!,
-      unitPrice: data.unitPrice!,
-      valueInQuantity: data.valueInQuantity || 0,
-      category: tieCategory,
-      imageUrl: finalImageUrl, // This could still be a long Data URI if an image was selected/captured
-    };
+    let uploadedImageUrl = data.imageUrl || PLACEHOLDER_IMAGE_URL;
+    let tempTieIdForImageUpload = editingTie?.id;
 
     try {
+      // Se for uma nova gravata e há uma imagem para upload, crie o documento primeiro
+      // para ter um ID para o caminho da imagem.
+      if (!editingTie?.id && (data.imageFile || (data.imageUrl && data.imageUrl.startsWith('data:')))) {
+        const tempTieDataForId = {
+          name: data.name!,
+          quantity: data.quantity!,
+          unitPrice: data.unitPrice!,
+          valueInQuantity: data.valueInQuantity || 0,
+          category: (data.category && data.category.trim() !== "") ? data.category : UNCATEGORIZED_LABEL,
+          imageUrl: PLACEHOLDER_IMAGE_URL, // Placeholder temporário
+        };
+        const tempNewTie = await addTieToFirestore(currentUser.uid, tempTieDataForId);
+        tempTieIdForImageUpload = tempNewTie.id;
+      } else if (!editingTie?.id) { // Nova gravata, sem imagem nova, usa placeholder direto
+         tempTieIdForImageUpload = Date.now().toString(); // Provisório, será substituído pelo ID real
+      }
+      
+      if (!tempTieIdForImageUpload) { // Garante que temos um ID para o upload
+        console.error("Tie ID is undefined, cannot proceed with image upload or tie creation.");
+        toast({ title: "Erro Crítico", description: "Não foi possível obter um ID para a gravata.", variant: "destructive" });
+        return;
+      }
+      
+      const existingImageUrlForUpload = editingTie?.id ? editingTie.imageUrl : null;
+
+      if (data.imageFile) {
+        uploadedImageUrl = await uploadImageAndGetURL(currentUser.uid, data.imageFile, tempTieIdForImageUpload, existingImageUrlForUpload);
+      } else if (data.imageUrl && data.imageUrl.startsWith('data:')) { // Webcam image
+        const imageBlob = await dataURItoBlob(data.imageUrl);
+        uploadedImageUrl = await uploadImageAndGetURL(currentUser.uid, imageBlob, tempTieIdForImageUpload, existingImageUrlForUpload);
+      } else if (!editingTie?.id) { // Nova gravata e nenhuma imagem nova, mantém placeholder
+        uploadedImageUrl = PLACEHOLDER_IMAGE_URL;
+      }
+      // Se for edição e não houver nova imagem, uploadedImageUrl já é o data.imageUrl (URL existente ou placeholder)
+
+      const tieCategory = data.category && data.category.trim() !== "" ? data.category : UNCATEGORIZED_LABEL;
+      const tieDataForSave = {
+        name: data.name!,
+        quantity: data.quantity!,
+        unitPrice: data.unitPrice!,
+        valueInQuantity: data.valueInQuantity || 0,
+        category: tieCategory,
+        imageUrl: uploadedImageUrl,
+      };
+
       if (editingTie?.id) {
         await updateTieInFirestore(currentUser.uid, editingTie.id, tieDataForSave);
         setTies(prevTies => prevTies.map(t => t.id === editingTie.id ? { ...tieDataForSave, id: editingTie.id! } : t));
         toast({ title: "Gravata Atualizada", description: `${data.name} foi atualizada.` });
+      } else if (tempTieIdForImageUpload && tempTieIdForImageUpload !== Date.now().toString()) { 
+        // Nova gravata, e imagem foi carregada (usando o ID do doc já criado)
+        await updateTieInFirestore(currentUser.uid, tempTieIdForImageUpload, tieDataForSave);
+        setTies(prevTies => [{ ...tieDataForSave, id: tempTieIdForImageUpload! }, ...prevTies.filter(t => t.id !== tempTieIdForImageUpload)]);
+        toast({ title: "Gravata Adicionada", description: `${data.name} foi adicionada.` });
       } else {
+        // Nova gravata, sem upload de imagem novo (usou placeholder, ou erro antes do upload)
         const newTie = await addTieToFirestore(currentUser.uid, tieDataForSave);
         setTies(prevTies => [newTie, ...prevTies]);
-        toast({ title: "Gravata Adicionada", description: `${data.name} foi adicionada ao seu inventário.` });
+        toast({ title: "Gravata Adicionada", description: `${data.name} foi adicionada.` });
       }
 
       if (!categories.includes(tieCategory)) { 
@@ -439,46 +454,34 @@ export default function HomePage() {
       }
 
     } catch (error: any) {
-      console.error("Erro ao salvar gravata no Firestore:", error);
-      let description = "Não foi possível salvar a gravata.";
-      if (error.message && error.message.includes("longer than 1048487 bytes")) {
-        description = "A imagem é muito grande. Por favor, use uma imagem menor ou aguarde a implementação do upload otimizado. A gravata foi salva com uma imagem placeholder.";
-        // Fallback: Save with placeholder if image was the issue
-         try {
-            const fallbackData = {...tieDataForSave, imageUrl: `https://placehold.co/300x400.png`};
-            if (editingTie?.id) {
-                 await updateTieInFirestore(currentUser.uid, editingTie.id, fallbackData);
-                 setTies(prevTies => prevTies.map(t => t.id === editingTie.id ? { ...fallbackData, id: editingTie.id! } : t));
-            } else {
-                const newTie = await addTieToFirestore(currentUser.uid, fallbackData);
-                setTies(prevTies => [newTie, ...prevTies]);
-            }
-         } catch (fallbackError) {
-            console.error("Erro ao salvar gravata com placeholder:", fallbackError);
-         }
-      }
-      toast({ title: "Erro no Servidor", description, variant: "destructive" });
+      console.error("Erro ao salvar gravata:", error);
+      toast({ title: "Erro ao Salvar", description: `Não foi possível salvar a gravata: ${error.message || 'Erro desconhecido.'}`, variant: "destructive" });
     }
 
     setEditingTie(undefined);
     setIsDialogOpen(false);
   }, [categories, editingTie, toast, isClientLoaded, authChecked, currentUser]);
 
+
   const handleEditTie = (tie: Tie) => {
-    setEditingTie({ ...tie, imageFile: null });
+    setEditingTie({ ...tie, imageFile: null }); // imageFile é sempre null ao abrir para edição
     setIsDialogOpen(true);
   };
 
-  const handleDeleteTie = async (id: string) => {
+  const handleDeleteTie = async (id: string, imageUrl?: string) => {
     if (!isClientLoaded || !authChecked || !currentUser?.uid) return;
     const tieToDelete = ties.find(t => t.id === id);
     
     try {
+      // Deleta a imagem do Storage ANTES de deletar o documento do Firestore
+      if (imageUrl && imageUrl !== PLACEHOLDER_IMAGE_URL) {
+        await deleteImageFromStorage(imageUrl);
+      }
       await deleteTieFromFirestore(currentUser.uid, id);
       setTies(prevTies => prevTies.filter(tie => tie.id !== id));
       toast({ title: "Gravata Removida", description: `${tieToDelete?.name || "Gravata"} foi removida.`, variant: "destructive" });
     } catch (error) {
-      console.error("Erro ao remover gravata no Firestore:", error);
+      console.error("Erro ao remover gravata:", error);
       toast({ title: "Erro no Servidor", description: "Não foi possível remover a gravata.", variant: "destructive" });
     }
   }; 
