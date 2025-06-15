@@ -12,17 +12,14 @@ export const TieSchema = z.object({
   unitPrice: z.coerce.number().min(0, { message: "O preço unitário deve ser não negativo." }),
   valueInQuantity: z.coerce.number().min(0, {message: "O valor em quantidade deve ser não negativo."}).optional().default(0),
   category: z.string().default(UNCATEGORIZED_LABEL),
-  imageUrl: z.string().url({ message: "URL da imagem inválida." }).optional().default(PLACEHOLDER_IMAGE_URL), 
+  imageUrl: z.string().url({ message: "URL da imagem inválida ou formato inesperado." }).optional().default(PLACEHOLDER_IMAGE_URL),
   imageFile: z.custom<File>((val) => val instanceof File, {
     message: "Arquivo de imagem inválido",
   }).nullable().optional(),
 });
 
 export type Tie = z.infer<typeof TieSchema> & {
-  id: string; 
+  id: string;
 };
 
-export type TieFormData = z.infer<typeof TieSchema>; // imageFile is already optional in TieSchema
-
-
-    
+export type TieFormData = z.infer<typeof TieSchema>;

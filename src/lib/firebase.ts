@@ -1,7 +1,6 @@
 
 import { initializeApp, getApps, FirebaseApp } from 'firebase/app';
 import { getFirestore, Firestore } from 'firebase/firestore';
-import { getStorage, FirebaseStorage } from 'firebase/storage'; // Added Storage
 // Adicione outros serviços do Firebase que você precisar, como getAuth
 
 // IMPORTANTE: Substitua estas configurações pelas configurações REAIS do seu projeto Firebase!
@@ -17,7 +16,6 @@ const firebaseConfig = {
 
 let app: FirebaseApp;
 let db: Firestore;
-let storage: FirebaseStorage; // Added Storage
 
 if (!getApps().length) {
   app = initializeApp(firebaseConfig);
@@ -26,6 +24,5 @@ if (!getApps().length) {
 }
 
 db = getFirestore(app);
-storage = getStorage(app); // Initialize Storage
 
-export { app, db, storage }; // Export Storage
+export { app, db };
