@@ -20,9 +20,6 @@ const getUserTiesCollectionRef = (userId: string) => {
   return collection(db, 'users', userId, 'ties');
 };
 
-// NOTA: Para imagens, salvar Data URIs diretamente no Firestore não é ideal para produção.
-// Considere usar o Firebase Storage para fazer upload das imagens e armazenar apenas a URL da imagem no Firestore.
-
 export const getTiesFromFirestore = async (userId: string): Promise<Tie[]> => {
   if (!userId) throw new Error("User ID is required to fetch ties.");
   try {
@@ -41,12 +38,11 @@ export const getTiesFromFirestore = async (userId: string): Promise<Tie[]> => {
   }
 };
 
-export const addTieToFirestore = async (userId: string, tieData: Omit<TieFormData, 'id' | 'imageFile'> & { imageUrl: string }): Promise<Tie> => {
+export const addTieToFirestore = async (userId: string, tieData: Omit<Tie, 'id'>): Promise<Tie> => {
   if (!userId) throw new Error("User ID is required to add a tie.");
   try {
     const docRef = await addDoc(getUserTiesCollectionRef(userId), {
         ...tieData,
-        // createdAt: Timestamp.now() 
     });
     return { ...tieData, id: docRef.id };
   } catch (error) {
@@ -55,7 +51,8 @@ export const addTieToFirestore = async (userId: string, tieData: Omit<TieFormDat
   }
 };
 
-export const updateTieInFirestore = async (userId: string, id: string, tieData: Omit<TieFormData, 'id' | 'imageFile'> & { imageUrl: string }): Promise<void> => {
+// Aceita um objeto parcial para atualizações, como apenas a quantidade.
+export const updateTieInFirestore = async (userId: string, id: string, tieData: Partial<Omit<Tie, 'id'>>): Promise<void> => {
   if (!userId) throw new Error("User ID is required to update a tie.");
   try {
     const tieDoc = doc(db, 'users', userId, 'ties', id);
@@ -98,3 +95,5 @@ export const batchUpdateTieCategoriesInFirestore = async (userId: string, oldCat
     throw error;
   }
 };
+
+    

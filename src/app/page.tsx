@@ -33,7 +33,6 @@ import {
   addCategoryToFirestore,
   deleteCategoryFromFirestore
 } from '@/services/categoryService';
-// Firebase Storage related imports are removed
 import { getAuth, onAuthStateChanged, signOut, User as FirebaseUser } from 'firebase/auth';
 import { app } from '@/lib/firebase';
 import {
@@ -413,13 +412,6 @@ export default function HomePage() {
 
       setCategories(prevCategories => {
           const updated = prevCategories.filter(cat => cat !== categoryBeingDeleted);
-          // Ensure UNCATEGORIZED_LABEL remains if ties still use it, or if it's the only category.
-          const tiesStillUseUncategorized = ties.some(tie => (tie.category === UNCATEGORIZED_LABEL && categoryBeingDeleted !== UNCATEGORIZED_LABEL) || (!tie.category && categoryBeingDeleted !== UNCATEGORIZED_LABEL));
-          if (tiesStillUseUncategorized && !updated.includes(UNCATEGORIZED_LABEL)) {
-            // updated.push(UNCATEGORIZED_LABEL); // Let the main useEffect handle this
-          } else if (updated.length === 0 && !updated.includes(UNCATEGORIZED_LABEL)) {
-            // updated.push(UNCATEGORIZED_LABEL); // Let the main useEffect handle this
-          }
           return updated.sort();
       });
 
@@ -447,62 +439,62 @@ export default function HomePage() {
 
     const userUid = currentUser.uid;
     const tieCategory = data.category && data.category.trim() !== "" ? data.category : UNCATEGORIZED_LABEL;
-    let imageUrlToPersist = PLACEHOLDER_IMAGE_URL; // Start with placeholder
-
-    // Prioritize new image file, then new webcam image, then existing image, then placeholder.
-    if (data.imageFile) {
-        console.log("HomePage: handleFormSubmit - imageFile present. Converting to Data URI...");
-        try {
-            imageUrlToPersist = await fileToDataURL(data.imageFile);
-            console.log("HomePage: handleFormSubmit - Converted imageFile to Data URI (truncated):", imageUrlToPersist.substring(0,100) + "...");
-        } catch (fileError) {
-            console.error("HomePage: Error converting imageFile to Data URI:", fileError);
-            toast({ title: "Erro na Imagem", description: "Não foi possível processar o arquivo de imagem. Usando imagem padrão.", variant: "destructive" });
-            imageUrlToPersist = PLACEHOLDER_IMAGE_URL; // Fallback on conversion error
-        }
-    } else if (data.imageUrl && data.imageUrl.startsWith('data:')) { // Webcam image (already a Data URI) or potentially an old Data URI from editing.
-        console.log("HomePage: handleFormSubmit - data.imageUrl is a Data URI.");
-        imageUrlToPersist = data.imageUrl;
-    } else if (editingTie?.imageUrl && editingTie.imageUrl !== PLACEHOLDER_IMAGE_URL) { // Editing, no new image provided, use existing if it's not the placeholder
-        console.log("HomePage: handleFormSubmit - Editing, no new image. Using existing imageUrl:", editingTie.imageUrl);
-        imageUrlToPersist = editingTie.imageUrl;
-    }
-    // If, after all that, imageUrlToPersist is still an empty string (which shouldn't happen with current TieForm logic but as a safeguard), default to placeholder.
-    if (!imageUrlToPersist) {
-        imageUrlToPersist = PLACEHOLDER_IMAGE_URL;
-    }
     
+    let finalImageUrl = PLACEHOLDER_IMAGE_URL;
 
-    const finalFirestoreObject: Omit<Tie, 'id'> = {
+    if (data.imageFile && data.imageFile.size > 0) { // Prioritize new file
+      console.log("HomePage: handleFormSubmit - imageFile present. Converting to Data URI...");
+      try {
+          finalImageUrl = await fileToDataURL(data.imageFile);
+          console.log("HomePage: handleFormSubmit - Converted imageFile to Data URI (truncated):", finalImageUrl.substring(0,100) + "...");
+      } catch (fileError) {
+          console.error("HomePage: Error converting imageFile to Data URI:", fileError);
+          toast({ title: "Erro na Imagem", description: "Não foi possível processar o arquivo de imagem. Usando imagem padrão.", variant: "destructive" });
+          finalImageUrl = PLACEHOLDER_IMAGE_URL;
+      }
+    } else if (data.imageUrl && data.imageUrl.startsWith('data:')) { // Webcam image or existing Data URI from edit
+        console.log("HomePage: handleFormSubmit - data.imageUrl is a Data URI.");
+        finalImageUrl = data.imageUrl;
+    } else if (editingTie?.id && data.imageUrl && !data.imageUrl.startsWith('data:')) { // Editing, imageUrl is a URL (not data URI), no new file/webcam
+        console.log("HomePage: handleFormSubmit - Editing, using existing URL from data.imageUrl:", data.imageUrl);
+        finalImageUrl = data.imageUrl;
+    } else if (editingTie?.id && editingTie.imageUrl && !editingTie.imageUrl.startsWith('data:')) { // Editing, using existing URL from editingTie.imageUrl
+        console.log("HomePage: handleFormSubmit - Editing, using existing URL from editingTie.imageUrl:", editingTie.imageUrl);
+        finalImageUrl = editingTie.imageUrl;
+    }
+    // If somehow it's still not a valid URL (e.g. empty string from form data if not handled above), default to placeholder.
+    if (!finalImageUrl || (!finalImageUrl.startsWith('http') && !finalImageUrl.startsWith('data:'))) {
+        console.warn("HomePage: handleFormSubmit - finalImageUrl was invalid, defaulting to placeholder. Was:", finalImageUrl);
+        finalImageUrl = PLACEHOLDER_IMAGE_URL;
+    }
+
+
+    const firestoreObject: Omit<Tie, 'id'> = {
       name: data.name!,
       quantity: data.quantity!,
       unitPrice: data.unitPrice!,
-      valueInQuantity: data.quantity! * data.unitPrice!, // Recalculate here
+      valueInQuantity: data.valueInQuantity!, // User sets this independently
       category: tieCategory,
-      imageUrl: imageUrlToPersist,
+      imageUrl: finalImageUrl,
     };
-    console.log("HomePage: handleFormSubmit - Final object for Firestore (imageUrl possibly truncated in log):", loggableFirestoreData(finalFirestoreObject));
-
+    console.log("HomePage: handleFormSubmit - Final object for Firestore (imageUrl possibly truncated in log):", loggableFirestoreData(firestoreObject));
 
     try {
       if (editingTie?.id) {
-        console.log(`HomePage: handleFormSubmit (Edit) - Attempting to update tie ID ${editingTie.id} for user ${userUid}.`);
-        await updateTieInFirestore(userUid, editingTie.id, finalFirestoreObject);
-        setTies(prevTies => prevTies.map(t => t.id === editingTie.id ? { ...finalFirestoreObject, id: editingTie.id! } : t));
+        console.log(`HomePage: handleFormSubmit (Edit) - Attempting to update tie ID ${editingTie.id} for user ${userUid}. Data:`, loggableFirestoreData(firestoreObject));
+        await updateTieInFirestore(userUid, editingTie.id, firestoreObject);
+        setTies(prevTies => prevTies.map(t => t.id === editingTie.id ? { ...firestoreObject, id: editingTie.id! } : t));
         toast({ title: "Gravata Atualizada", description: `${data.name} foi atualizada.` });
       } else {
-        console.log(`HomePage: handleFormSubmit (Add) - Attempting to add new tie for user ${userUid}.`);
-        const newTie = await addTieToFirestore(userUid, finalFirestoreObject);
-        setTies(prevTies => [newTie, ...prevTies]);
+        console.log(`HomePage: handleFormSubmit (Add) - Attempting to add new tie for user ${userUid}. Data:`, loggableFirestoreData(firestoreObject));
+        const newTie = await addTieToFirestore(userUid, firestoreObject);
+        setTies(prevTies => [{ ...newTie, imageUrl: finalImageUrl }, ...prevTies]);
         toast({ title: "Gravata Adicionada", description: `${newTie.name} foi adicionada.` });
       }
 
       if (!categories.includes(tieCategory) && tieCategory !== UNCATEGORIZED_LABEL) {
         console.log(`HomePage: handleFormSubmit - Adding new category "${tieCategory}" to Firestore and local state.`);
-        // No need to call addCategoryToFirestore directly if it's part of the normal category management.
-        // Instead, ensure it's added to the local `categories` state.
         setCategories(prevCategories => Array.from(new Set([...prevCategories, tieCategory])).sort());
-        // And if it's not UNCATEGORIZED_LABEL, persist it.
         if(tieCategory !== UNCATEGORIZED_LABEL && !(await getCategoriesFromFirestore(userUid, [])).includes(tieCategory)) {
             await addCategoryToFirestore(userUid, tieCategory);
         }
@@ -510,37 +502,41 @@ export default function HomePage() {
          setCategories(prevCategories => Array.from(new Set([...prevCategories, UNCATEGORIZED_LABEL])).sort());
       }
 
-
     } catch (error: any) {
       console.error("HomePage: Erro ao salvar gravata no Firestore:", error);
       console.error("HomePage: Data submitted that caused error:", loggableFirestoreData(data));
+      console.error("HomePage: Firestore object that caused error:", loggableFirestoreData(firestoreObject));
       let description = "Não foi possível salvar a gravata.";
+      
       if (error.message) {
         description = error.message;
          if (error.message.includes("longer than 1048487 bytes")) {
-            description = "A imagem é muito grande (maior que 1MB) e não pôde ser salva. Tente uma imagem menor. A gravata não foi salva.";
-            // Attempt to save with placeholder
+            description = "A imagem é muito grande (maior que 1MB) e não pôde ser salva. Tente uma imagem menor ou use uma imagem padrão.";
+            
+            // Attempt to save/update with placeholder
+            const fallbackObject = { ...firestoreObject, imageUrl: PLACEHOLDER_IMAGE_URL };
             try {
-                const fallbackObject = { ...finalFirestoreObject, imageUrl: PLACEHOLDER_IMAGE_URL };
                 if (editingTie?.id) {
                     await updateTieInFirestore(userUid, editingTie.id, fallbackObject);
                     setTies(prevTies => prevTies.map(t => t.id === editingTie.id ? { ...fallbackObject, id: editingTie.id! } : t));
                     toast({ title: "Gravata Atualizada (com Imagem Padrão)", description: `${data.name} foi atualizada, mas a imagem era muito grande e foi substituída por uma padrão.` });
                 } else {
-                    const newTie = await addTieToFirestore(userUid, fallbackObject);
-                    setTies(prevTies => [newTie, ...prevTies]);
-                    toast({ title: "Gravata Adicionada (com Imagem Padrão)", description: `${newTie.name} foi adicionada, mas a imagem era muito grande e foi substituída por uma padrão.` });
+                    // For new ties, we can't simply re-add as it might duplicate.
+                    // The initial add might have failed completely.
+                    // Or, if we created a doc shell, update that.
+                    // For simplicity now, just inform user, they might need to re-add.
+                    toast({ title: "Gravata Não Adicionada", description: `A imagem para ${data.name} era muito grande. A gravata não foi adicionada. Tente novamente com uma imagem menor ou sem imagem.` });
                 }
                 description = ""; // Clear original error message as we handled it
             } catch (fallbackError: any) {
-                console.error("HomePage: Error saving tie with fallback image:", fallbackError);
+                console.error("HomePage: Error saving/updating tie with fallback image:", fallbackError);
                 description = `Não foi possível salvar a gravata. A imagem original era muito grande e a tentativa de salvar com imagem padrão também falhou: ${fallbackError.message}`;
             }
         } else if (error.message.includes("An unexpected response was received from the server")) {
              description = "O servidor retornou uma resposta inesperada. Verifique os logs do servidor ou tente novamente mais tarde.";
         }
       }
-      if(description) { // Only show toast if there's still an unhandled error description
+      if(description) {
         toast({ title: "Erro ao Salvar", description, variant: "destructive" });
       }
     }
@@ -553,7 +549,11 @@ export default function HomePage() {
 
   const handleEditTie = (tie: Tie) => {
     console.log("HomePage: handleEditTie called for tie:", tie.id, loggableFirestoreData(tie));
-    setEditingTie({ ...tie, imageFile: null }); 
+    setEditingTie({ 
+        ...tie, 
+        imageFile: null, // Reset imageFile when opening for edit
+        imageUrl: tie.imageUrl || PLACEHOLDER_IMAGE_URL // Ensure imageUrl is a valid URL string
+    }); 
     setIsDialogOpen(true);
   };
 
@@ -566,7 +566,6 @@ export default function HomePage() {
     try {
       console.log("HomePage: Deleting tie from Firestore, ID:", id);
       await deleteTieFromFirestore(userUid, id);
-      // Note: Image deletion from Firebase Storage was removed in previous step.
       setTies(prevTies => prevTies.filter(tie => tie.id !== id));
       toast({ title: "Gravata Removida", description: `${tieToDelete?.name || "Gravata"} foi removida.`, variant: "destructive" });
       console.log("HomePage: Tie deleted successfully.");
@@ -578,7 +577,7 @@ export default function HomePage() {
 
   const openAddDialog = () => {
     console.log("HomePage: openAddDialog called.");
-    setEditingTie(undefined);
+    setEditingTie(undefined); // Clear any editing state
     setIsDialogOpen(true);
   };
 
@@ -587,7 +586,6 @@ export default function HomePage() {
     try {
       await signOut(auth);
       console.log("HomePage: User signed out.");
-      // onAuthStateChanged will handle redirect to /login
     } catch (error) {
       console.error("HomePage: Erro ao fazer logout:", error);
       toast({ title: "Erro", description: "Não foi possível fazer logout.", variant: "destructive"});
@@ -602,20 +600,11 @@ export default function HomePage() {
 
     if (tieToUpdate) {
       const newQuantity = (tieToUpdate.quantity || 0) + 1;
-      const newValueInQuantity = newQuantity * (tieToUpdate.unitPrice || 0);
-      const updatedTieData = { 
-        ...tieToUpdate, 
-        quantity: newQuantity,
-        valueInQuantity: newValueInQuantity,
-      };
-      // Remove id and imageFile as they are not part of the update payload for Firestore in this context
-      const { id, imageFile, ...firestoreData } = updatedTieData;
-
+      const updatedTiePartialData = { quantity: newQuantity };
 
       try {
-        await updateTieInFirestore(userUid, tieId, firestoreData as Omit<Tie, 'id'>);
-        setTies(prevTies => prevTies.map(t => t.id === tieId ? updatedTieData : t));
-        // toast({ title: "Estoque Atualizado", description: `Estoque de ${tieToUpdate.name} aumentado para ${newQuantity}.` });
+        await updateTieInFirestore(userUid, tieId, updatedTiePartialData as Partial<Omit<Tie, 'id'>>);
+        setTies(prevTies => prevTies.map(t => t.id === tieId ? { ...t, quantity: newQuantity } : t));
       } catch (error: any) {
         console.error("Error incrementing stock:", error);
         toast({ variant: "destructive", title: "Erro ao Atualizar Estoque", description: error.message });
@@ -630,18 +619,11 @@ export default function HomePage() {
 
     if (tieToUpdate && (tieToUpdate.quantity || 0) > 0) {
       const newQuantity = (tieToUpdate.quantity || 0) - 1;
-      const newValueInQuantity = newQuantity * (tieToUpdate.unitPrice || 0);
-       const updatedTieData = { 
-        ...tieToUpdate, 
-        quantity: newQuantity,
-        valueInQuantity: newValueInQuantity,
-      };
-      const { id, imageFile, ...firestoreData } = updatedTieData;
-
+      const updatedTiePartialData = { quantity: newQuantity };
+      
       try {
-        await updateTieInFirestore(userUid, tieId, firestoreData as Omit<Tie, 'id'>);
-        setTies(prevTies => prevTies.map(t => t.id === tieId ? updatedTieData : t));
-        // toast({ title: "Estoque Atualizado", description: `Estoque de ${tieToUpdate.name} diminuído para ${newQuantity}.` });
+        await updateTieInFirestore(userUid, tieId, updatedTiePartialData as Partial<Omit<Tie, 'id'>>);
+        setTies(prevTies => prevTies.map(t => t.id === tieId ? { ...t, quantity: newQuantity } : t));
       } catch (error: any) {
         console.error("Error decrementing stock:", error);
         toast({ variant: "destructive", title: "Erro ao Atualizar Estoque", description: error.message });
@@ -710,3 +692,5 @@ export default function HomePage() {
     </SidebarProvider>
   );
 }
+
+    
