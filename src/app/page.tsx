@@ -91,6 +91,8 @@ function MainContentLayout({
   openAddDialog,
   handleEditTie,
   handleDeleteTie,
+  handleIncrementStock,
+  handleDecrementStock,
 }: {
   currentUser: FirebaseUser;
   ties: Tie[];
@@ -105,6 +107,8 @@ function MainContentLayout({
   openAddDialog: () => void;
   handleEditTie: (tie: Tie) => void;
   handleDeleteTie: (id: string, imageUrl?: string) => void;
+  handleIncrementStock: (id: string) => void;
+  handleDecrementStock: (id: string) => void;
 }) {
   const { toggleSidebar } = useSidebar();
 
@@ -192,7 +196,14 @@ function MainContentLayout({
                {filteredTies.length > 0 ? (
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                   {filteredTies.map((tie) => (
-                    <TieCard key={tie.id} tie={tie} onEdit={handleEditTie} onDelete={() => handleDeleteTie(tie.id, tie.imageUrl)} />
+                    <TieCard 
+                        key={tie.id} 
+                        tie={tie} 
+                        onEdit={handleEditTie} 
+                        onDelete={() => handleDeleteTie(tie.id, tie.imageUrl)}
+                        onIncrementStock={handleIncrementStock}
+                        onDecrementStock={handleDecrementStock}
+                    />
                   ))}
                 </div>
               ) : (
@@ -336,7 +347,11 @@ export default function HomePage() {
 
 
   const handleAddCategory = useCallback(async (categoryName: string): Promise<boolean> => {
-    if (!isClientLoaded || !authChecked || !currentUser?.uid) return false;
+    console.log("HomePage: handleAddCategory called for category:", categoryName);
+    if (!isClientLoaded || !authChecked || !currentUser?.uid) {
+        console.warn("HomePage: handleAddCategory - Aborted due to guard conditions.");
+        return false;
+    }
     const trimmedName = categoryName.trim();
     if (!trimmedName) {
       toast({ title: "Erro", description: "O nome da categoria não pode estar vazio.", variant: "destructive" });
@@ -351,6 +366,7 @@ export default function HomePage() {
       await addCategoryToFirestore(currentUser.uid, trimmedName);
       setCategories(prevCategories => Array.from(new Set([...prevCategories, trimmedName])).sort());
       toast({ title: "Categoria Adicionada", description: `A categoria "${trimmedName}" foi adicionada.` });
+      console.log("HomePage: Category added successfully.");
       return true;
     } catch (error) {
       console.error("HomePage: Erro ao adicionar categoria no Firestore:", error);
@@ -397,8 +413,16 @@ export default function HomePage() {
 
       setCategories(prevCategories => {
           const updated = prevCategories.filter(cat => cat !== categoryBeingDeleted);
+          // Ensure UNCATEGORIZED_LABEL remains if ties still use it, or if it's the only category.
+          const tiesStillUseUncategorized = ties.some(tie => (tie.category === UNCATEGORIZED_LABEL && categoryBeingDeleted !== UNCATEGORIZED_LABEL) || (!tie.category && categoryBeingDeleted !== UNCATEGORIZED_LABEL));
+          if (tiesStillUseUncategorized && !updated.includes(UNCATEGORIZED_LABEL)) {
+            // updated.push(UNCATEGORIZED_LABEL); // Let the main useEffect handle this
+          } else if (updated.length === 0 && !updated.includes(UNCATEGORIZED_LABEL)) {
+            // updated.push(UNCATEGORIZED_LABEL); // Let the main useEffect handle this
+          }
           return updated.sort();
       });
+
 
       setActiveCategory(newActiveCategory);
       toast({ title: "Categoria Removida", description: toastMessage });
@@ -410,7 +434,7 @@ export default function HomePage() {
       setCategoryToDelete(null);
       setIsConfirmDeleteCategoryOpen(false);
     }
-  }, [activeCategory, toast, isClientLoaded, authChecked, currentUser, categoryToDelete, categories]);
+  }, [activeCategory, toast, isClientLoaded, authChecked, currentUser, categoryToDelete, categories, ties]);
 
 
   const handleFormSubmit = useCallback(async (data: TieFormData) => {
@@ -423,41 +447,44 @@ export default function HomePage() {
 
     const userUid = currentUser.uid;
     const tieCategory = data.category && data.category.trim() !== "" ? data.category : UNCATEGORIZED_LABEL;
-    let imageUrlToPersist = PLACEHOLDER_IMAGE_URL;
+    let imageUrlToPersist = PLACEHOLDER_IMAGE_URL; // Start with placeholder
 
-    try {
-      if (data.imageFile) {
+    // Prioritize new image file, then new webcam image, then existing image, then placeholder.
+    if (data.imageFile) {
         console.log("HomePage: handleFormSubmit - imageFile present. Converting to Data URI...");
-        imageUrlToPersist = await fileToDataURL(data.imageFile);
-        console.log("HomePage: handleFormSubmit - Converted imageFile to Data URI (truncated):", imageUrlToPersist.substring(0,100) + "...");
-      } else if (data.imageUrl && data.imageUrl.startsWith('data:')) { // Webcam image or existing Data URI
+        try {
+            imageUrlToPersist = await fileToDataURL(data.imageFile);
+            console.log("HomePage: handleFormSubmit - Converted imageFile to Data URI (truncated):", imageUrlToPersist.substring(0,100) + "...");
+        } catch (fileError) {
+            console.error("HomePage: Error converting imageFile to Data URI:", fileError);
+            toast({ title: "Erro na Imagem", description: "Não foi possível processar o arquivo de imagem. Usando imagem padrão.", variant: "destructive" });
+            imageUrlToPersist = PLACEHOLDER_IMAGE_URL; // Fallback on conversion error
+        }
+    } else if (data.imageUrl && data.imageUrl.startsWith('data:')) { // Webcam image (already a Data URI) or potentially an old Data URI from editing.
         console.log("HomePage: handleFormSubmit - data.imageUrl is a Data URI.");
         imageUrlToPersist = data.imageUrl;
-      } else if (editingTie && editingTie.imageUrl && !data.imageFile) { // Editing, no new image, use existing if it's not a placeholder
-         console.log("HomePage: handleFormSubmit - Editing, no new image. Using existing imageUrl:", editingTie.imageUrl);
-         imageUrlToPersist = editingTie.imageUrl;
-      }
+    } else if (editingTie?.imageUrl && editingTie.imageUrl !== PLACEHOLDER_IMAGE_URL) { // Editing, no new image provided, use existing if it's not the placeholder
+        console.log("HomePage: handleFormSubmit - Editing, no new image. Using existing imageUrl:", editingTie.imageUrl);
+        imageUrlToPersist = editingTie.imageUrl;
+    }
+    // If, after all that, imageUrlToPersist is still an empty string (which shouldn't happen with current TieForm logic but as a safeguard), default to placeholder.
+    if (!imageUrlToPersist) {
+        imageUrlToPersist = PLACEHOLDER_IMAGE_URL;
+    }
+    
 
-      // Double check if imageUrlToPersist is still the placeholder, and if editingTie had a valid non-placeholder URL, prefer that.
-      if (editingTie && imageUrlToPersist === PLACEHOLDER_IMAGE_URL && editingTie.imageUrl && editingTie.imageUrl !== PLACEHOLDER_IMAGE_URL) {
-          if (editingTie.imageUrl.startsWith('http')) { // Assume it's a valid previously stored URL (e.g. from old Firebase Storage)
-             imageUrlToPersist = editingTie.imageUrl;
-             console.log("HomePage: handleFormSubmit - Reverted to existing valid URL from editingTie:", imageUrlToPersist);
-          }
-      }
-
-
-      const finalFirestoreObject: Omit<Tie, 'id'> = {
-        name: data.name!,
-        quantity: data.quantity!,
-        unitPrice: data.unitPrice!,
-        valueInQuantity: data.valueInQuantity || 0,
-        category: tieCategory,
-        imageUrl: imageUrlToPersist, // This will be Data URI or placeholder
-      };
-      console.log("HomePage: handleFormSubmit - Final object for Firestore (imageUrl possibly truncated in log):", loggableFirestoreData(finalFirestoreObject));
+    const finalFirestoreObject: Omit<Tie, 'id'> = {
+      name: data.name!,
+      quantity: data.quantity!,
+      unitPrice: data.unitPrice!,
+      valueInQuantity: data.quantity! * data.unitPrice!, // Recalculate here
+      category: tieCategory,
+      imageUrl: imageUrlToPersist,
+    };
+    console.log("HomePage: handleFormSubmit - Final object for Firestore (imageUrl possibly truncated in log):", loggableFirestoreData(finalFirestoreObject));
 
 
+    try {
       if (editingTie?.id) {
         console.log(`HomePage: handleFormSubmit (Edit) - Attempting to update tie ID ${editingTie.id} for user ${userUid}.`);
         await updateTieInFirestore(userUid, editingTie.id, finalFirestoreObject);
@@ -465,16 +492,24 @@ export default function HomePage() {
         toast({ title: "Gravata Atualizada", description: `${data.name} foi atualizada.` });
       } else {
         console.log(`HomePage: handleFormSubmit (Add) - Attempting to add new tie for user ${userUid}.`);
-        const newTie = await addTieToFirestore(userUid, finalFirestoreObject); // addTieToFirestore now returns the full Tie object
+        const newTie = await addTieToFirestore(userUid, finalFirestoreObject);
         setTies(prevTies => [newTie, ...prevTies]);
-        toast({ title: "Gravata Adicionada", description: `${data.name} foi adicionada.` });
+        toast({ title: "Gravata Adicionada", description: `${newTie.name} foi adicionada.` });
       }
 
-      if (!categories.includes(tieCategory)) {
+      if (!categories.includes(tieCategory) && tieCategory !== UNCATEGORIZED_LABEL) {
         console.log(`HomePage: handleFormSubmit - Adding new category "${tieCategory}" to Firestore and local state.`);
-        await addCategoryToFirestore(userUid, tieCategory);
+        // No need to call addCategoryToFirestore directly if it's part of the normal category management.
+        // Instead, ensure it's added to the local `categories` state.
         setCategories(prevCategories => Array.from(new Set([...prevCategories, tieCategory])).sort());
+        // And if it's not UNCATEGORIZED_LABEL, persist it.
+        if(tieCategory !== UNCATEGORIZED_LABEL && !(await getCategoriesFromFirestore(userUid, [])).includes(tieCategory)) {
+            await addCategoryToFirestore(userUid, tieCategory);
+        }
+      } else if (tieCategory === UNCATEGORIZED_LABEL && !categories.includes(UNCATEGORIZED_LABEL)) {
+         setCategories(prevCategories => Array.from(new Set([...prevCategories, UNCATEGORIZED_LABEL])).sort());
       }
+
 
     } catch (error: any) {
       console.error("HomePage: Erro ao salvar gravata no Firestore:", error);
@@ -484,10 +519,30 @@ export default function HomePage() {
         description = error.message;
          if (error.message.includes("longer than 1048487 bytes")) {
             description = "A imagem é muito grande (maior que 1MB) e não pôde ser salva. Tente uma imagem menor. A gravata não foi salva.";
+            // Attempt to save with placeholder
+            try {
+                const fallbackObject = { ...finalFirestoreObject, imageUrl: PLACEHOLDER_IMAGE_URL };
+                if (editingTie?.id) {
+                    await updateTieInFirestore(userUid, editingTie.id, fallbackObject);
+                    setTies(prevTies => prevTies.map(t => t.id === editingTie.id ? { ...fallbackObject, id: editingTie.id! } : t));
+                    toast({ title: "Gravata Atualizada (com Imagem Padrão)", description: `${data.name} foi atualizada, mas a imagem era muito grande e foi substituída por uma padrão.` });
+                } else {
+                    const newTie = await addTieToFirestore(userUid, fallbackObject);
+                    setTies(prevTies => [newTie, ...prevTies]);
+                    toast({ title: "Gravata Adicionada (com Imagem Padrão)", description: `${newTie.name} foi adicionada, mas a imagem era muito grande e foi substituída por uma padrão.` });
+                }
+                description = ""; // Clear original error message as we handled it
+            } catch (fallbackError: any) {
+                console.error("HomePage: Error saving tie with fallback image:", fallbackError);
+                description = `Não foi possível salvar a gravata. A imagem original era muito grande e a tentativa de salvar com imagem padrão também falhou: ${fallbackError.message}`;
+            }
+        } else if (error.message.includes("An unexpected response was received from the server")) {
+             description = "O servidor retornou uma resposta inesperada. Verifique os logs do servidor ou tente novamente mais tarde.";
         }
       }
-      toast({ title: "Erro ao Salvar", description, variant: "destructive" });
-      // Do not add/update local state if save failed due to image size or other server error
+      if(description) { // Only show toast if there's still an unhandled error description
+        toast({ title: "Erro ao Salvar", description, variant: "destructive" });
+      }
     }
 
     setEditingTie(undefined);
@@ -498,7 +553,7 @@ export default function HomePage() {
 
   const handleEditTie = (tie: Tie) => {
     console.log("HomePage: handleEditTie called for tie:", tie.id, loggableFirestoreData(tie));
-    setEditingTie({ ...tie, imageFile: null }); // Ensure imageFile is nulled for edit form
+    setEditingTie({ ...tie, imageFile: null }); 
     setIsDialogOpen(true);
   };
 
@@ -509,9 +564,9 @@ export default function HomePage() {
     const userUid = currentUser.uid;
 
     try {
-      // No Firebase Storage deletion logic needed in this reverted version
       console.log("HomePage: Deleting tie from Firestore, ID:", id);
       await deleteTieFromFirestore(userUid, id);
+      // Note: Image deletion from Firebase Storage was removed in previous step.
       setTies(prevTies => prevTies.filter(tie => tie.id !== id));
       toast({ title: "Gravata Removida", description: `${tieToDelete?.name || "Gravata"} foi removida.`, variant: "destructive" });
       console.log("HomePage: Tie deleted successfully.");
@@ -538,6 +593,62 @@ export default function HomePage() {
       toast({ title: "Erro", description: "Não foi possível fazer logout.", variant: "destructive"});
     }
   };
+
+
+  const handleIncrementStock = async (tieId: string) => {
+    if (!currentUser?.uid) return;
+    const userUid = currentUser.uid;
+    const tieToUpdate = ties.find(t => t.id === tieId);
+
+    if (tieToUpdate) {
+      const newQuantity = (tieToUpdate.quantity || 0) + 1;
+      const newValueInQuantity = newQuantity * (tieToUpdate.unitPrice || 0);
+      const updatedTieData = { 
+        ...tieToUpdate, 
+        quantity: newQuantity,
+        valueInQuantity: newValueInQuantity,
+      };
+      // Remove id and imageFile as they are not part of the update payload for Firestore in this context
+      const { id, imageFile, ...firestoreData } = updatedTieData;
+
+
+      try {
+        await updateTieInFirestore(userUid, tieId, firestoreData as Omit<Tie, 'id'>);
+        setTies(prevTies => prevTies.map(t => t.id === tieId ? updatedTieData : t));
+        // toast({ title: "Estoque Atualizado", description: `Estoque de ${tieToUpdate.name} aumentado para ${newQuantity}.` });
+      } catch (error: any) {
+        console.error("Error incrementing stock:", error);
+        toast({ variant: "destructive", title: "Erro ao Atualizar Estoque", description: error.message });
+      }
+    }
+  };
+
+  const handleDecrementStock = async (tieId: string) => {
+    if (!currentUser?.uid) return;
+    const userUid = currentUser.uid;
+    const tieToUpdate = ties.find(t => t.id === tieId);
+
+    if (tieToUpdate && (tieToUpdate.quantity || 0) > 0) {
+      const newQuantity = (tieToUpdate.quantity || 0) - 1;
+      const newValueInQuantity = newQuantity * (tieToUpdate.unitPrice || 0);
+       const updatedTieData = { 
+        ...tieToUpdate, 
+        quantity: newQuantity,
+        valueInQuantity: newValueInQuantity,
+      };
+      const { id, imageFile, ...firestoreData } = updatedTieData;
+
+      try {
+        await updateTieInFirestore(userUid, tieId, firestoreData as Omit<Tie, 'id'>);
+        setTies(prevTies => prevTies.map(t => t.id === tieId ? updatedTieData : t));
+        // toast({ title: "Estoque Atualizado", description: `Estoque de ${tieToUpdate.name} diminuído para ${newQuantity}.` });
+      } catch (error: any) {
+        console.error("Error decrementing stock:", error);
+        toast({ variant: "destructive", title: "Erro ao Atualizar Estoque", description: error.message });
+      }
+    }
+  };
+
 
   if (!isClientLoaded || !authChecked || !currentUser) {
     return (
@@ -566,6 +677,8 @@ export default function HomePage() {
         openAddDialog={openAddDialog}
         handleEditTie={handleEditTie}
         handleDeleteTie={handleDeleteTie}
+        handleIncrementStock={handleIncrementStock}
+        handleDecrementStock={handleDecrementStock}
       />
 
       <AddTieDialog

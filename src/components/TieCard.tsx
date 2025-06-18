@@ -6,16 +6,18 @@ import Image from 'next/image';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import type { Tie } from '@/lib/types';
-import { Edit3, Trash2, Package, DollarSign, Tag, Coins } from 'lucide-react';
+import { Edit3, Trash2, Package, DollarSign, Tag, Coins, Plus, Minus } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 
 interface TieCardProps {
   tie: Tie;
   onEdit: (tie: Tie) => void;
   onDelete: (id: string) => void;
+  onIncrementStock: (id: string) => void;
+  onDecrementStock: (id: string) => void;
 }
 
-export function TieCard({ tie, onEdit, onDelete }: TieCardProps) {
+export function TieCard({ tie, onEdit, onDelete, onIncrementStock, onDecrementStock }: TieCardProps) {
 
   return (
     <Card className="flex flex-col h-full shadow-lg hover:shadow-xl transition-shadow duration-300">
@@ -41,19 +43,40 @@ export function TieCard({ tie, onEdit, onDelete }: TieCardProps) {
           <span className="flex items-center text-muted-foreground">
             <Package size={14} className="mr-1" /> Estoque:
           </span>
-          <span>{tie.quantity}</span>
+          <div className="flex items-center gap-1">
+            <Button 
+              variant="outline" 
+              size="icon" 
+              className="h-6 w-6" 
+              onClick={() => onDecrementStock(tie.id)}
+              disabled={tie.quantity <= 0}
+              aria-label={`Diminuir estoque de ${tie.name}`}
+            >
+              <Minus size={12} />
+            </Button>
+            <span className="min-w-[20px] text-center">{tie.quantity}</span>
+            <Button 
+              variant="outline" 
+              size="icon" 
+              className="h-6 w-6" 
+              onClick={() => onIncrementStock(tie.id)}
+              aria-label={`Aumentar estoque de ${tie.name}`}
+            >
+              <Plus size={12} />
+            </Button>
+          </div>
         </div>
         <div className="flex items-center justify-between">
           <span className="flex items-center text-muted-foreground">
             <DollarSign size={14} className="mr-1" /> Valor Unitário:
           </span>
-          <span>{(tie.unitPrice || 0).toFixed(2)}</span>
+          <span>R$ {(tie.unitPrice || 0).toFixed(2)}</span>
         </div>
         <div className="flex items-center justify-between font-semibold">
           <span className="flex items-center text-muted-foreground">
             <Coins size={14} className="mr-1" /> Valor em Quantidade:
           </span>
-          <span>{(tie.valueInQuantity || 0).toFixed(2)}</span>
+          <span>R$ {(tie.valueInQuantity || 0).toFixed(2)}</span>
         </div>
       </CardContent>
       <CardFooter className="flex justify-end space-x-2 pt-4">
